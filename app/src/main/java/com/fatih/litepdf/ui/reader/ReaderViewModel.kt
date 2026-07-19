@@ -1,0 +1,194 @@
+package com.fatih.litepdf.ui.reader
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.fatih.litepdf.domain.repository.DocumentRepository
+import com.fatih.litepdf.domain.repository.OpenDocumentResult
+import com.fatih.litepdf.domain.repository.SettingsRepository
+import com.fatih.litepdf.pdf.PdfBitmapCache
+import com.fatih.litepdf.pdf.PdfDocumentSession
+import com.fatih.litepdf.pdf.PdfEngine
+import com.fatih.litepdf.pdf.PdfRenderResult
+import com.fatih.litepdf.pdf.PdfSearchResult
+import com.fatih.litepdf.pdf.PdfTextSearchEngine
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+class ReaderViewModel(
+    private val documentId: String,
+    private val repository: DocumentRepository,
+    private val settingsRepository: SettingsRepository,
+    private val pdfEngine: PdfEngine,
+    private val textSearchEngine: PdfTextSearchEngine,
+    private val bitmapCache: PdfBitmapCache
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(ReaderUiState())
+    val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
+
+    private var session: PdfDocumentSession? = null
+    private val renderJobs = mutableMapOf<Int, Job>()
+    private var searchJob: Job? = null
+    private var rememberLastPage = true
+
+    init {
+        open()
+        viewModelScope.launch {
+            settingsRepository.settings.collectLatest { settings ->
+                rememberLastPage = settings.rememberLastPage
+            }
+        }
+        viewModelScope.launch {
+            repository.observeBookmarks(documentId).collectLatest { bookmarks ->
+                _uiState.update { it.copy(bookmarks = bookmarks) }
+            }
+        }
+    }
+
+    private fun open() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isOpening = true, openError = false) }
+            when (val result = repository.reopenDocument(documentId)) {
+                is OpenDocumentResult.Success -> {
+                    try {
+                        val openedSession = pdfEngine.open(Uri.parse(result.document.uriString))
+                        session = openedSession
+                        _uiState.update {
+                            it.copy(
+                                document = result.document,
+                                pageCount = openedSession.info.pageCount,
+                                currentPage = result.document.lastViewedPage.coerceIn(0, openedSession.info.pageCount - 1),
+                                isOpening = false,
+                                openError = false
+                            )
+                        }
+                    } catch (throwable: Throwable) {
+                        _uiState.update { it.copy(isOpening = false, openError = true) }
+                    }
+                }
+                is OpenDocumentResult.Failure -> {
+                    _uiState.update { it.copy(isOpening = false, openError = true) }
+                }
+            }
+        }
+    }
+
+    fun renderPage(pageIndex: Int, targetWidthPx: Int) {
+        val document = _uiState.value.document ?: return
+        if (pageIndex !in 0 until _uiState.value.pageCount || targetWidthPx <= 0) return
+        bitmapCache.get(document.id, pageIndex, targetWidthPx)?.let { bitmap ->
+            _uiState.update { state ->
+                state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Ready(bitmap)))
+            }
+            return
+        }
+        if (renderJobs[pageIndex]?.isActive == true) return
+
+        _uiState.update { state ->
+            state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Loading))
+        }
+        renderJobs[pageIndex] = viewModelScope.launch {
+            when (val result = session?.renderPage(pageIndex, targetWidthPx)) {
+                is PdfRenderResult.Success -> {
+                    bitmapCache.put(document.id, pageIndex, targetWidthPx, result.page.bitmap)
+                    _uiState.update { state ->
+                        state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Ready(result.page.bitmap)))
+                    }
+                }
+                is PdfRenderResult.Failure -> {
+                    _uiState.update { state ->
+                        state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Failed(result.reason)))
+                    }
+                }
+                null -> Unit
+            }
+            renderJobs.remove(pageIndex)
+        }
+    }
+
+    fun onVisiblePageChanged(pageIndex: Int) {
+        if (pageIndex !in 0 until _uiState.value.pageCount) return
+        _uiState.update { it.copy(currentPage = pageIndex) }
+        _uiState.value.document?.let { document ->
+            bitmapCache.trimToVisibleRange(document.id, pageIndex)
+            if (rememberLastPage) {
+                viewModelScope.launch { repository.updateLastViewedPage(document.id, pageIndex) }
+            }
+        }
+    }
+
+    fun toggleToolbar() {
+        _uiState.update { it.copy(toolbarVisible = !it.toolbarVisible) }
+    }
+
+    fun bookmarkCurrentPage() {
+        val state = _uiState.value
+        val document = state.document ?: return
+        viewModelScope.launch {
+            if (state.currentPageBookmarked) {
+                repository.removeBookmark(document.id, state.currentPage)
+            } else {
+                repository.bookmarkPage(document.id, state.currentPage)
+            }
+        }
+    }
+
+    fun removeBookmark(pageIndex: Int) {
+        val document = _uiState.value.document ?: return
+        viewModelScope.launch { repository.removeBookmark(document.id, pageIndex) }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query, searchFailure = null, searchCompleted = false) }
+    }
+
+    fun searchText() {
+        val document = _uiState.value.document ?: return
+        val query = _uiState.value.searchQuery
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, searchFailure = null, searchCompleted = false, searchHits = emptyList()) }
+            when (val result = textSearchEngine.search(Uri.parse(document.uriString), query)) {
+                is PdfSearchResult.Success -> {
+                    _uiState.update {
+                        it.copy(isSearching = false, searchHits = result.hits, searchCompleted = true, searchFailure = null)
+                    }
+                }
+                is PdfSearchResult.Failure -> {
+                    _uiState.update {
+                        it.copy(isSearching = false, searchHits = emptyList(), searchCompleted = true, searchFailure = result.reason)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        renderJobs.values.forEach { it.cancel() }
+        renderJobs.clear()
+        searchJob?.cancel()
+        session?.close()
+        session = null
+        bitmapCache.clear()
+        super.onCleared()
+    }
+
+    class Factory(
+        private val documentId: String,
+        private val repository: DocumentRepository,
+        private val settingsRepository: SettingsRepository,
+        private val pdfEngine: PdfEngine,
+        private val textSearchEngine: PdfTextSearchEngine,
+        private val bitmapCache: PdfBitmapCache
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            ReaderViewModel(documentId, repository, settingsRepository, pdfEngine, textSearchEngine, bitmapCache) as T
+    }
+}

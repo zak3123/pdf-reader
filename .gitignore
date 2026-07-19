@@ -1,0 +1,21 @@
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+
+# Local tool bootstrap used by this Codex workspace
+work/
+
+# IDE
+.idea/
+*.iml
+
+# Build outputs
+outputs/
+*.apk
+*.aab
+
+# OS
+.DS_Store
+Thumbs.db
