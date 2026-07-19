@@ -2,9 +2,8 @@ package com.fatih.litepdf.data.database
 
 import androidx.room.Dao
 import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.fatih.litepdf.data.model.RecentDocumentEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -16,7 +15,7 @@ interface RecentDocumentDao {
     @Query("SELECT * FROM recent_documents WHERE id = :documentId LIMIT 1")
     suspend fun getById(documentId: String): RecentDocumentEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(document: RecentDocumentEntity)
 
     @Query("UPDATE recent_documents SET lastViewedPage = :pageIndex WHERE id = :documentId")

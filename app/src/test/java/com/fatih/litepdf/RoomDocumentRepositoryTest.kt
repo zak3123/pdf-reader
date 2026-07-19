@@ -71,6 +71,18 @@ class RoomDocumentRepositoryTest {
     }
 
     @Test
+    fun bookmarksSurviveRecentDocumentUpsert() = runTest {
+        val repository = repository(FakePdfEngine(pageCount = 3))
+        val uri = Uri.parse("content://example/bookmark-survives.pdf")
+        val document = (repository.openDocument(uri) as OpenDocumentResult.Success).document
+
+        repository.bookmarkPage(document.id, 2)
+        repository.openDocument(uri)
+
+        assertEquals(listOf(2), repository.observeBookmarks(document.id).first().map { it.pageIndex })
+    }
+
+    @Test
     fun inaccessibleUriReturnsAccessUnavailable() = runTest {
         val repository = repository(FakePdfEngine(pageCount = 0, inaccessible = true))
         val result = repository.openDocument(Uri.parse("content://example/missing.pdf"))
