@@ -14,13 +14,14 @@ import java.io.IOException
 import kotlin.math.roundToInt
 
 class AndroidPdfEngine(
-    private val contentResolver: ContentResolver
+    private val contentResolver: ContentResolver,
+    private val isLowRamDevice: Boolean = false
 ) : PdfEngine {
     override suspend fun open(uri: Uri): PdfDocumentSession = withContext(Dispatchers.IO) {
         val pfd = contentResolver.openFileDescriptor(uri, "r")
             ?: throw IOException("Provider returned no file descriptor")
         try {
-            AndroidPdfDocumentSession(pfd)
+            AndroidPdfDocumentSession(pfd, isLowRamDevice)
         } catch (throwable: Throwable) {
             pfd.close()
             throw throwable
@@ -29,7 +30,8 @@ class AndroidPdfEngine(
 }
 
 class AndroidPdfDocumentSession(
-    private val fileDescriptor: ParcelFileDescriptor
+    private val fileDescriptor: ParcelFileDescriptor,
+    private val isLowRamDevice: Boolean = false
 ) : PdfDocumentSession {
     private val renderer = PdfRenderer(fileDescriptor)
     private val mutex = Mutex()
@@ -58,7 +60,12 @@ class AndroidPdfDocumentSession(
                     renderer.openPage(pageIndex).use { page ->
                         val target = calculateTargetSize(page.width, page.height, targetWidthPx)
                             ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.TooLarge)
-                        val bitmap = Bitmap.createBitmap(target.first, target.second, Bitmap.Config.ARGB_8888)
+                        val bitmap = createPageBitmap(
+                            pageWidth = page.width,
+                            pageHeight = page.height,
+                            requestedWidth = targetWidthPx,
+                            rgb565Target = target
+                        ) ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.OutOfMemory)
                         bitmap.eraseColor(Color.WHITE)
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         PdfRenderResult.Success(RenderedPage(pageIndex, bitmap))
@@ -80,9 +87,53 @@ class AndroidPdfDocumentSession(
         fileDescriptor.close()
     }
 
-    private fun calculateTargetSize(pageWidth: Int, pageHeight: Int, requestedWidth: Int): Pair<Int, Int>? {
-        val maxDimension = 3200
-        val maxBytes = 36L * 1024L * 1024L
+    private fun createPageBitmap(
+        pageWidth: Int,
+        pageHeight: Int,
+        requestedWidth: Int,
+        rgb565Target: Pair<Int, Int>
+    ): Bitmap? {
+        return try {
+            Bitmap.createBitmap(rgb565Target.first, rgb565Target.second, Bitmap.Config.RGB_565)
+        } catch (_: OutOfMemoryError) {
+            createArgbFallback(pageWidth, pageHeight, requestedWidth)
+        } catch (_: IllegalArgumentException) {
+            createArgbFallback(pageWidth, pageHeight, requestedWidth)
+        }
+    }
+
+    private fun createArgbFallback(
+        pageWidth: Int,
+        pageHeight: Int,
+        requestedWidth: Int
+    ): Bitmap? {
+        val fallbackTarget = calculateTargetSize(
+            pageWidth = pageWidth,
+            pageHeight = pageHeight,
+            requestedWidth = (requestedWidth / 2).coerceAtLeast(120),
+            bytesPerPixel = ARGB_8888_BYTES_PER_PIXEL,
+            byteLimit = maxBitmapBytes / 2
+        ) ?: return null
+        return try {
+            Bitmap.createBitmap(
+                fallbackTarget.first,
+                fallbackTarget.second,
+                Bitmap.Config.ARGB_8888
+            )
+        } catch (_: OutOfMemoryError) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun calculateTargetSize(
+        pageWidth: Int,
+        pageHeight: Int,
+        requestedWidth: Int,
+        bytesPerPixel: Int = RGB_565_BYTES_PER_PIXEL,
+        byteLimit: Long = maxBitmapBytes
+    ): Pair<Int, Int>? {
         val aspect = pageHeight.toFloat() / pageWidth.toFloat()
         var width = requestedWidth.coerceIn(120, maxDimension)
         var height = (width * aspect).roundToInt().coerceAtLeast(1)
@@ -90,11 +141,24 @@ class AndroidPdfDocumentSession(
             height = maxDimension
             width = (height / aspect).roundToInt().coerceAtLeast(1)
         }
-        val bytes = width.toLong() * height.toLong() * 4L
-        if (bytes <= maxBytes) return width to height
-        val scale = kotlin.math.sqrt(maxBytes.toDouble() / bytes.toDouble())
+        val bytes = width.toLong() * height.toLong() * bytesPerPixel
+        if (bytes <= byteLimit) return width to height
+        val scale = kotlin.math.sqrt(byteLimit.toDouble() / bytes.toDouble())
         width = (width * scale).roundToInt().coerceAtLeast(1)
         height = (height * scale).roundToInt().coerceAtLeast(1)
-        return if (width.toLong() * height.toLong() * 4L <= maxBytes) width to height else null
+        return if (width.toLong() * height.toLong() * bytesPerPixel <= byteLimit) {
+            width to height
+        } else {
+            null
+        }
+    }
+
+    private val maxDimension: Int = if (isLowRamDevice) 2400 else 3200
+    private val maxBitmapBytes: Long =
+        (if (isLowRamDevice) 16L else 36L) * 1024L * 1024L
+
+    private companion object {
+        const val RGB_565_BYTES_PER_PIXEL = 2
+        const val ARGB_8888_BYTES_PER_PIXEL = 4
     }
 }

@@ -2,6 +2,7 @@ package com.fatih.litepdf.ui.reader
 
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,6 +75,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -85,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import com.fatih.litepdf.R
 import com.fatih.litepdf.domain.model.AppSettings
 import com.fatih.litepdf.pdf.PdfSearchFailure
+import com.fatih.litepdf.pdf.PdfWordHighlight
 import com.fatih.litepdf.util.PageJumpValidator
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -95,6 +99,7 @@ import kotlin.math.roundToInt
 fun ReaderScreen(
     state: ReaderUiState,
     settings: AppSettings,
+    isLowRamDevice: Boolean,
     onBack: () -> Unit,
     onToggleToolbar: () -> Unit,
     onVisiblePageChanged: (Int) -> Unit,
@@ -102,7 +107,8 @@ fun ReaderScreen(
     onBookmarkCurrentPage: () -> Unit,
     onRemoveBookmark: (Int) -> Unit,
     onSearchQueryChange: (String) -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    onSearchHitSelected: (Int) -> Unit
 ) {
     val activity = LocalActivity.current
     DisposableEffect(settings.keepScreenAwake) {
@@ -175,6 +181,10 @@ fun ReaderScreen(
                 onRemoveBookmark = onRemoveBookmark,
                 onSearchQueryChange = onSearchQueryChange,
                 onSearch = onSearch,
+                onSearchHitSelected = { pageIndex ->
+                    onSearchHitSelected(pageIndex)
+                    jumpToPage(pageIndex)
+                },
                 onZoomIn = zoomIn,
                 onZoomOut = zoomOut,
                 onFitWidth = fitWidth,
@@ -189,6 +199,7 @@ fun ReaderScreen(
                     modifier = Modifier.weight(1f),
                     state = state,
                     settings = settings,
+                    isLowRamDevice = isLowRamDevice,
                     layoutMode = layoutMode,
                     listState = listState,
                     scale = scale,
@@ -218,6 +229,7 @@ fun ReaderScreen(
                     modifier = Modifier.fillMaxSize(),
                     state = state,
                     settings = settings,
+                    isLowRamDevice = isLowRamDevice,
                     layoutMode = layoutMode,
                     listState = listState,
                     scale = scale,
@@ -259,6 +271,7 @@ private fun ReaderScaffold(
     modifier: Modifier,
     state: ReaderUiState,
     settings: AppSettings,
+    isLowRamDevice: Boolean,
     layoutMode: ReaderLayoutMode,
     listState: androidx.compose.foundation.lazy.LazyListState,
     scale: Float,
@@ -348,6 +361,7 @@ private fun ReaderScaffold(
                 .padding(padding),
             state = state,
             settings = settings,
+            isLowRamDevice = isLowRamDevice,
             layoutMode = layoutMode,
             listState = listState,
             scale = scale,
@@ -366,6 +380,7 @@ private fun ReaderDocumentArea(
     modifier: Modifier,
     state: ReaderUiState,
     settings: AppSettings,
+    isLowRamDevice: Boolean,
     layoutMode: ReaderLayoutMode,
     listState: androidx.compose.foundation.lazy.LazyListState,
     scale: Float,
@@ -406,6 +421,10 @@ private fun ReaderDocumentArea(
                     PdfPageItem(
                         pageIndex = state.currentPage,
                         renderState = state.pageStates[state.currentPage],
+                        pageAspectRatio = state.pageAspectRatios[state.currentPage],
+                        searchHighlights = state.currentSearchHighlights,
+                        isLowRamDevice = isLowRamDevice,
+                        shouldRender = true,
                         pageRotation = pageRotation,
                         onRenderPage = onRenderPage
                     )
@@ -435,6 +454,10 @@ private fun ReaderDocumentArea(
                         PdfPageItem(
                             pageIndex = index,
                             renderState = state.pageStates[index],
+                            pageAspectRatio = state.pageAspectRatios[index],
+                            searchHighlights = state.searchHighlightsForPage(index),
+                            isLowRamDevice = isLowRamDevice,
+                            shouldRender = kotlin.math.abs(index - state.currentPage) <= 1,
                             pageRotation = pageRotation,
                             onRenderPage = onRenderPage
                         )
@@ -459,6 +482,7 @@ private fun ReaderNavigationPanel(
     onRemoveBookmark: (Int) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onSearchHitSelected: (Int) -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onFitWidth: () -> Unit,
@@ -665,7 +689,7 @@ private fun ReaderNavigationPanel(
             items(state.searchHits.size) { index ->
                 val hit = state.searchHits[index]
                 ListItem(
-                    modifier = Modifier.clickable { onJumpToPage(hit.pageIndex) },
+                    modifier = Modifier.clickable { onSearchHitSelected(hit.pageIndex) },
                     leadingContent = {
                         Icon(Icons.Default.Search, contentDescription = null)
                     },
@@ -753,37 +777,76 @@ private fun NavigationSectionTitle(text: String) {
 private fun PdfPageItem(
     pageIndex: Int,
     renderState: PageRenderState?,
+    pageAspectRatio: Float?,
+    searchHighlights: List<PdfWordHighlight>,
+    isLowRamDevice: Boolean,
+    shouldRender: Boolean,
     pageRotation: Int,
     onRenderPage: (Int, Int) -> Unit
 ) {
     val density = LocalDensity.current
-    val targetWidthPx = with(density) { 760.dp.roundToPx() }
-    LaunchedEffect(pageIndex, targetWidthPx) {
-        onRenderPage(pageIndex, targetWidthPx)
-    }
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.72f)
+            .aspectRatio(pageAspectRatio ?: DEFAULT_PAGE_ASPECT_RATIO)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
+        val targetWidthPx = with(density) {
+            maxWidth.roundToPx().coerceAtMost(
+                if (isLowRamDevice) LOW_RAM_TARGET_WIDTH_PX else NORMAL_TARGET_WIDTH_PX
+            )
+        }
+        LaunchedEffect(pageIndex, targetWidthPx, shouldRender) {
+            if (shouldRender) {
+                onRenderPage(pageIndex, targetWidthPx)
+            }
+        }
         when (renderState) {
             is PageRenderState.Ready -> {
-                Image(
-                    bitmap = renderState.bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.page_position_unknown_total, pageIndex + 1),
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer { rotationZ = pageRotation.toFloat() },
-                    contentScale = ContentScale.FillWidth
-                )
+                        .fillMaxSize()
+                        .graphicsLayer { rotationZ = pageRotation.toFloat() }
+                ) {
+                    Image(
+                        bitmap = renderState.bitmap.asImageBitmap(),
+                        contentDescription = stringResource(
+                            R.string.page_position_unknown_total,
+                            pageIndex + 1
+                        ),
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                    if (searchHighlights.isNotEmpty()) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            searchHighlights.forEach { highlight ->
+                                drawRect(
+                                    color = SEARCH_HIGHLIGHT_COLOR,
+                                    topLeft = Offset(
+                                        x = highlight.normX * size.width,
+                                        y = highlight.normY * size.height
+                                    ),
+                                    size = Size(
+                                        width = highlight.normW * size.width,
+                                        height = highlight.normH * size.height
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
             }
             is PageRenderState.Failed -> ErrorMessage(stringResource(R.string.page_render_failed))
             PageRenderState.Loading, null -> LoadingMessage(stringResource(R.string.rendering_page))
         }
     }
 }
+
+private const val DEFAULT_PAGE_ASPECT_RATIO = 1f / 1.414f
+private const val LOW_RAM_TARGET_WIDTH_PX = 1400
+private const val NORMAL_TARGET_WIDTH_PX = 2200
+private val SEARCH_HIGHLIGHT_COLOR = Color(0xFFFFEB3B).copy(alpha = 0.45f)
 
 @Composable
 private fun LoadingMessage(text: String) {

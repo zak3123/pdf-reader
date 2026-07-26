@@ -178,6 +178,7 @@ private fun LitePdfApp(
             ReaderScreen(
                 state = readerState,
                 settings = settings,
+                isLowRamDevice = container.isLowRamDevice,
                 onBack = { navController.popBackStack() },
                 onToggleToolbar = readerViewModel::toggleToolbar,
                 onVisiblePageChanged = readerViewModel::onVisiblePageChanged,
@@ -185,7 +186,8 @@ private fun LitePdfApp(
                 onBookmarkCurrentPage = readerViewModel::bookmarkCurrentPage,
                 onRemoveBookmark = readerViewModel::removeBookmark,
                 onSearchQueryChange = readerViewModel::updateSearchQuery,
-                onSearch = readerViewModel::searchText
+                onSearch = readerViewModel::searchText,
+                onSearchHitSelected = readerViewModel::selectSearchHit
             )
         }
         composable(Routes.Settings) {

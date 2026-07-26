@@ -1,5 +1,6 @@
 package com.fatih.litepdf
 
+import android.app.ActivityManager
 import android.app.Application
 import androidx.room.Room
 import com.fatih.litepdf.data.database.LitePdfDatabase
@@ -24,14 +25,24 @@ class LitePdfApplication : Application() {
 }
 
 class AppContainer(application: Application) {
+    val isLowRamDevice: Boolean =
+        application.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
+
     val database: LitePdfDatabase = Room.databaseBuilder(
         application,
         LitePdfDatabase::class.java,
         "litepdf.db"
     ).build()
 
-    val bitmapCache = PdfBitmapCache()
-    val pdfEngine = AndroidPdfEngine(application.contentResolver)
+    val bitmapCache = PdfBitmapCache(
+        maxBytes = if (isLowRamDevice) {
+            PdfBitmapCache.defaultMaxBytes().coerceAtMost(16 * 1024 * 1024)
+        } else {
+            PdfBitmapCache.defaultMaxBytes()
+        },
+        retentionRadius = if (isLowRamDevice) 1 else 3
+    )
+    val pdfEngine = AndroidPdfEngine(application.contentResolver, isLowRamDevice)
     val textSearchEngine = PdfBoxTextSearchEngine(application.contentResolver)
     val documentRepository: DocumentRepository = RoomDocumentRepository(
         contentResolver = application.contentResolver,

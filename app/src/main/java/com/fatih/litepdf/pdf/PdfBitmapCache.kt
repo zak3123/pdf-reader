@@ -3,19 +3,37 @@ package com.fatih.litepdf.pdf
 import android.graphics.Bitmap
 import android.util.LruCache
 
-class PdfBitmapCache(maxBytes: Int = defaultMaxBytes()) {
+class PdfBitmapCache(
+    maxBytes: Int = defaultMaxBytes(),
+    val retentionRadius: Int = 3
+) {
     private val cache = object : LruCache<String, Bitmap>(maxBytes) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+
+        override fun entryRemoved(
+            evicted: Boolean,
+            key: String,
+            oldValue: Bitmap,
+            newValue: Bitmap?
+        ) {
+            if (oldValue !== newValue && !oldValue.isRecycled) {
+                oldValue.recycle()
+            }
+        }
     }
 
     fun get(documentId: String, pageIndex: Int, widthPx: Int): Bitmap? =
-        cache.get(key(documentId, pageIndex, widthPx))
+        cache.get(key(documentId, pageIndex, widthPx))?.takeUnless(Bitmap::isRecycled)
 
     fun put(documentId: String, pageIndex: Int, widthPx: Int, bitmap: Bitmap) {
         cache.put(key(documentId, pageIndex, widthPx), bitmap)
     }
 
-    fun trimToVisibleRange(documentId: String, centerPage: Int, radius: Int = 3) {
+    fun trimToVisibleRange(
+        documentId: String,
+        centerPage: Int,
+        radius: Int = retentionRadius
+    ) {
         val keys = cache.snapshot().keys
         keys.filter { key ->
             val parts = key.split(':')
