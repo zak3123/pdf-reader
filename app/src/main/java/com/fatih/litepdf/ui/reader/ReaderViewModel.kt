@@ -39,6 +39,7 @@ class ReaderViewModel(
     private val renderJobs = mutableMapOf<Int, Job>()
     private var cacheTrimJob: Job? = null
     private var searchJob: Job? = null
+    private var lastTargetWidthPx = 0
     private var rememberLastPage = true
 
     init {
@@ -86,8 +87,28 @@ class ReaderViewModel(
     fun renderPage(pageIndex: Int, targetWidthPx: Int) {
         val document = _uiState.value.document ?: return
         if (pageIndex !in 0 until _uiState.value.pageCount || targetWidthPx <= 0) return
+        lastTargetWidthPx = targetWidthPx
         if (kotlin.math.abs(pageIndex - _uiState.value.currentPage) > RENDER_RADIUS) return
-        bitmapCache.get(document.id, pageIndex, targetWidthPx)?.let { bitmap ->
+        enqueueRender(document.id, pageIndex, targetWidthPx, showLoading = true)
+        prefetchAdjacentPages(document.id, targetWidthPx)
+    }
+
+    private fun prefetchAdjacentPages(documentId: String, targetWidthPx: Int) {
+        val state = _uiState.value
+        listOf(state.currentPage + 1, state.currentPage - 1)
+            .filter { it in 0 until state.pageCount }
+            .forEach { pageIndex ->
+                enqueueRender(documentId, pageIndex, targetWidthPx, showLoading = false)
+            }
+    }
+
+    private fun enqueueRender(
+        documentId: String,
+        pageIndex: Int,
+        targetWidthPx: Int,
+        showLoading: Boolean
+    ) {
+        bitmapCache.get(documentId, pageIndex, targetWidthPx)?.let { bitmap ->
             _uiState.update { state ->
                 state.copy(
                     pageStates = state.pageStates + (pageIndex to PageRenderState.Ready(bitmap)),
@@ -100,8 +121,10 @@ class ReaderViewModel(
         }
         if (renderJobs[pageIndex]?.isActive == true) return
 
-        _uiState.update { state ->
-            state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Loading))
+        if (showLoading) {
+            _uiState.update { state ->
+                state.copy(pageStates = state.pageStates + (pageIndex to PageRenderState.Loading))
+            }
         }
         renderJobs[pageIndex] = viewModelScope.launch {
             try {
@@ -111,7 +134,7 @@ class ReaderViewModel(
                             result.page.bitmap.recycle()
                             return@launch
                         }
-                        bitmapCache.put(document.id, pageIndex, targetWidthPx, result.page.bitmap)
+                        bitmapCache.put(documentId, pageIndex, targetWidthPx, result.page.bitmap)
                         if (result.page.bitmap.isRecycled) {
                             _uiState.update { state ->
                                 state.copy(
@@ -158,6 +181,7 @@ class ReaderViewModel(
         if (pageIndex !in 0 until _uiState.value.pageCount) return
         renderJobs
             .filterKeys { kotlin.math.abs(it - pageIndex) > RENDER_RADIUS }
+            .toList()
             .forEach { (index, job) ->
                 job.cancel()
                 renderJobs.remove(index)
@@ -178,6 +202,9 @@ class ReaderViewModel(
             }
             if (rememberLastPage) {
                 viewModelScope.launch { repository.updateLastViewedPage(document.id, pageIndex) }
+            }
+            if (lastTargetWidthPx > 0) {
+                prefetchAdjacentPages(document.id, lastTargetWidthPx)
             }
         }
     }

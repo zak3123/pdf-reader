@@ -68,8 +68,17 @@ class AndroidPdfDocumentSession(
                         val rendered = createArgbBitmap(target)
                             ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.OutOfMemory)
                         rendered.eraseColor(Color.WHITE)
+                        val renderStartedAt = System.currentTimeMillis()
                         page.render(rendered, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val renderMs = System.currentTimeMillis() - renderStartedAt
                         val cached = createCacheBitmap(rendered)
+                        val totalMs = System.currentTimeMillis() - renderStartedAt
+                        Log.d(
+                            RENDER_TIMING_TAG,
+                            "page=${pageIndex + 1} target=${target.first}x${target.second} " +
+                                "renderMs=$renderMs totalMs=$totalMs " +
+                                "thread=${Thread.currentThread().name}"
+                        )
                         PdfRenderResult.Success(RenderedPage(pageIndex, cached ?: rendered))
                     }
                 }
@@ -151,6 +160,7 @@ class AndroidPdfDocumentSession(
 
     private companion object {
         const val TAG = "PdfEngine"
+        const val RENDER_TIMING_TAG = "PdfRenderTiming"
         const val RGB_565_BYTES_PER_PIXEL = 2
         const val ARGB_8888_BYTES_PER_PIXEL = 4
     }

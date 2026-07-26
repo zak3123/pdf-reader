@@ -166,7 +166,12 @@ fun ReaderScreen(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val usePermanentNavigation = maxWidth >= 900.dp
+        val usePermanentNavigation = maxWidth >= TABLET_NAVIGATION_BREAKPOINT_DP.dp
+        val navigationPanelWidth = if (maxWidth >= EXPANDED_NAVIGATION_BREAKPOINT_DP.dp) {
+            EXPANDED_NAVIGATION_WIDTH_DP.dp
+        } else {
+            MEDIUM_NAVIGATION_WIDTH_DP.dp
+        }
         val navigationPanel: @Composable () -> Unit = {
             ReaderNavigationPanel(
                 state = state,
@@ -174,6 +179,7 @@ fun ReaderScreen(
                 scale = scale,
                 pageRotation = pageRotation,
                 permanent = usePermanentNavigation,
+                panelWidth = navigationPanelWidth,
                 onLayoutModeChange = { layoutMode = it },
                 onJumpToPage = jumpToPage,
                 onShowJumpDialog = { showJumpDialog = true },
@@ -475,6 +481,7 @@ private fun ReaderNavigationPanel(
     scale: Float,
     pageRotation: Int,
     permanent: Boolean,
+    panelWidth: androidx.compose.ui.unit.Dp,
     onLayoutModeChange: (ReaderLayoutMode) -> Unit,
     onJumpToPage: (Int) -> Unit,
     onShowJumpDialog: () -> Unit,
@@ -489,7 +496,7 @@ private fun ReaderNavigationPanel(
     onRotate: () -> Unit
 ) {
     val panelModifier = Modifier
-        .width(320.dp)
+        .width(panelWidth)
         .fillMaxHeight()
     val content: @Composable () -> Unit = {
         LazyColumn(
@@ -851,7 +858,11 @@ private fun PdfPageItem(
 
 private const val DEFAULT_PAGE_ASPECT_RATIO = 1f / 1.414f
 private const val LOW_RAM_TARGET_WIDTH_PX = 1400
-private const val NORMAL_TARGET_WIDTH_PX = 2200
+private const val NORMAL_TARGET_WIDTH_PX = 1800
+private const val TABLET_NAVIGATION_BREAKPOINT_DP = 600
+private const val EXPANDED_NAVIGATION_BREAKPOINT_DP = 840
+private const val MEDIUM_NAVIGATION_WIDTH_DP = 320
+private const val EXPANDED_NAVIGATION_WIDTH_DP = 360
 private val SEARCH_HIGHLIGHT_COLOR = Color(0xFFFFEB3B).copy(alpha = 0.45f)
 
 @Composable
