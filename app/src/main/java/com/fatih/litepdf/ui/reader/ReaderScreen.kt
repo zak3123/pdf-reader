@@ -785,10 +785,16 @@ private fun PdfPageItem(
     onRenderPage: (Int, Int) -> Unit
 ) {
     val density = LocalDensity.current
+    val baseAspectRatio = pageAspectRatio ?: DEFAULT_PAGE_ASPECT_RATIO
+    val displayAspectRatio = if (pageRotation % 180 == 0) {
+        baseAspectRatio
+    } else {
+        1f / baseAspectRatio
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(pageAspectRatio ?: DEFAULT_PAGE_ASPECT_RATIO)
+            .aspectRatio(displayAspectRatio)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {

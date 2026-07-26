@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -58,24 +59,31 @@ class AndroidPdfDocumentSession(
             try {
                 mutex.withLock {
                     renderer.openPage(pageIndex).use { page ->
-                        val target = calculateTargetSize(page.width, page.height, targetWidthPx)
-                            ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.TooLarge)
-                        val bitmap = createPageBitmap(
+                        val target = calculateTargetSize(
                             pageWidth = page.width,
                             pageHeight = page.height,
                             requestedWidth = targetWidthPx,
-                            rgb565Target = target
-                        ) ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.OutOfMemory)
-                        bitmap.eraseColor(Color.WHITE)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        PdfRenderResult.Success(RenderedPage(pageIndex, bitmap))
+                            bytesPerPixel = ARGB_8888_BYTES_PER_PIXEL
+                        ) ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.TooLarge)
+                        val rendered = createArgbBitmap(target)
+                            ?: return@withLock PdfRenderResult.Failure(PdfRenderFailure.OutOfMemory)
+                        rendered.eraseColor(Color.WHITE)
+                        page.render(rendered, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        val cached = createCacheBitmap(rendered)
+                        PdfRenderResult.Success(RenderedPage(pageIndex, cached ?: rendered))
                     }
                 }
             } catch (oom: OutOfMemoryError) {
+                Log.e(TAG, "render failed", oom)
                 PdfRenderResult.Failure(PdfRenderFailure.OutOfMemory)
             } catch (illegal: IllegalStateException) {
+                Log.e(TAG, "render failed", illegal)
                 PdfRenderResult.Failure(PdfRenderFailure.Unsupported)
             } catch (argument: IllegalArgumentException) {
+                Log.e(TAG, "render failed", argument)
+                PdfRenderResult.Failure(PdfRenderFailure.Unsupported)
+            } catch (runtime: RuntimeException) {
+                Log.e(TAG, "render failed", runtime)
                 PdfRenderResult.Failure(PdfRenderFailure.Unsupported)
             }
         }
@@ -87,39 +95,23 @@ class AndroidPdfDocumentSession(
         fileDescriptor.close()
     }
 
-    private fun createPageBitmap(
-        pageWidth: Int,
-        pageHeight: Int,
-        requestedWidth: Int,
-        rgb565Target: Pair<Int, Int>
-    ): Bitmap? {
+    private fun createArgbBitmap(target: Pair<Int, Int>): Bitmap? {
         return try {
-            Bitmap.createBitmap(rgb565Target.first, rgb565Target.second, Bitmap.Config.RGB_565)
+            Bitmap.createBitmap(target.first, target.second, Bitmap.Config.ARGB_8888)
         } catch (_: OutOfMemoryError) {
-            createArgbFallback(pageWidth, pageHeight, requestedWidth)
+            null
         } catch (_: IllegalArgumentException) {
-            createArgbFallback(pageWidth, pageHeight, requestedWidth)
+            null
         }
     }
 
-    private fun createArgbFallback(
-        pageWidth: Int,
-        pageHeight: Int,
-        requestedWidth: Int
-    ): Bitmap? {
-        val fallbackTarget = calculateTargetSize(
-            pageWidth = pageWidth,
-            pageHeight = pageHeight,
-            requestedWidth = (requestedWidth / 2).coerceAtLeast(120),
-            bytesPerPixel = ARGB_8888_BYTES_PER_PIXEL,
-            byteLimit = maxBitmapBytes / 2
-        ) ?: return null
+    private fun createCacheBitmap(rendered: Bitmap): Bitmap? {
         return try {
-            Bitmap.createBitmap(
-                fallbackTarget.first,
-                fallbackTarget.second,
-                Bitmap.Config.ARGB_8888
-            )
+            rendered.copy(Bitmap.Config.RGB_565, false)?.also {
+                if (it !== rendered && !rendered.isRecycled) {
+                    rendered.recycle()
+                }
+            }
         } catch (_: OutOfMemoryError) {
             null
         } catch (_: IllegalArgumentException) {
@@ -158,6 +150,7 @@ class AndroidPdfDocumentSession(
         (if (isLowRamDevice) 16L else 36L) * 1024L * 1024L
 
     private companion object {
+        const val TAG = "PdfEngine"
         const val RGB_565_BYTES_PER_PIXEL = 2
         const val ARGB_8888_BYTES_PER_PIXEL = 4
     }
