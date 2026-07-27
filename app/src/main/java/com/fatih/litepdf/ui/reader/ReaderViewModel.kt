@@ -8,6 +8,7 @@ import com.fatih.litepdf.domain.repository.DocumentRepository
 import com.fatih.litepdf.domain.repository.OpenDocumentResult
 import com.fatih.litepdf.domain.repository.SettingsRepository
 import com.fatih.litepdf.pdf.PdfBitmapCache
+import com.fatih.litepdf.pdf.PdfDocumentStructureReader
 import com.fatih.litepdf.pdf.PdfDocumentSession
 import com.fatih.litepdf.pdf.PdfEngine
 import com.fatih.litepdf.pdf.PdfRenderFailure
@@ -30,15 +31,19 @@ class ReaderViewModel(
     private val settingsRepository: SettingsRepository,
     private val pdfEngine: PdfEngine,
     private val textSearchEngine: PdfTextSearchEngine,
-    private val bitmapCache: PdfBitmapCache
+    private val bitmapCache: PdfBitmapCache,
+    private val thumbnailCache: PdfBitmapCache,
+    private val documentStructureReader: PdfDocumentStructureReader
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     private var session: PdfDocumentSession? = null
     private val renderJobs = mutableMapOf<Int, Job>()
+    private val thumbnailJobs = mutableMapOf<Int, Job>()
     private var cacheTrimJob: Job? = null
     private var searchJob: Job? = null
+    private var structureJob: Job? = null
     private var lastTargetWidthPx = 0
     private var rememberLastPage = true
 
@@ -73,6 +78,7 @@ class ReaderViewModel(
                                 openError = false
                             )
                         }
+                        loadDocumentStructure(Uri.parse(result.document.uriString))
                     } catch (throwable: Throwable) {
                         _uiState.update { it.copy(isOpening = false, openError = true) }
                     }
@@ -172,6 +178,50 @@ class ReaderViewModel(
                 val currentJob = currentCoroutineContext()[Job]
                 if (renderJobs[pageIndex] === currentJob) {
                     renderJobs.remove(pageIndex)
+                }
+            }
+        }
+    }
+
+    private fun loadDocumentStructure(uri: Uri) {
+        structureJob?.cancel()
+        structureJob = viewModelScope.launch {
+            val structure = documentStructureReader.read(uri)
+            _uiState.update {
+                it.copy(outline = structure.outline, linksByPage = structure.linksByPage)
+            }
+        }
+    }
+
+    fun renderThumbnail(pageIndex: Int) {
+        val document = _uiState.value.document ?: return
+        if (pageIndex !in 0 until _uiState.value.pageCount) return
+        thumbnailCache.get(document.id, pageIndex, THUMBNAIL_WIDTH_PX)?.let { bitmap ->
+            _uiState.update { state ->
+                state.copy(pageThumbnails = state.pageThumbnails + (pageIndex to bitmap))
+            }
+            return
+        }
+        if (thumbnailJobs[pageIndex]?.isActive == true) return
+        thumbnailJobs[pageIndex] = viewModelScope.launch {
+            try {
+                when (val result = session?.renderPage(pageIndex, THUMBNAIL_WIDTH_PX)) {
+                    is PdfRenderResult.Success -> {
+                        thumbnailCache.put(document.id, pageIndex, THUMBNAIL_WIDTH_PX, result.page.bitmap)
+                        if (!result.page.bitmap.isRecycled) {
+                            _uiState.update { state ->
+                                state.copy(
+                                    pageThumbnails = state.pageThumbnails + (pageIndex to result.page.bitmap)
+                                )
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            } finally {
+                val currentJob = currentCoroutineContext()[Job]
+                if (thumbnailJobs[pageIndex] === currentJob) {
+                    thumbnailJobs.remove(pageIndex)
                 }
             }
         }
@@ -278,14 +328,18 @@ class ReaderViewModel(
     override fun onCleared() {
         renderJobs.values.forEach { it.cancel() }
         renderJobs.clear()
+        thumbnailJobs.values.forEach { it.cancel() }
+        thumbnailJobs.clear()
         cacheTrimJob?.cancel()
         searchJob?.cancel()
+        structureJob?.cancel()
         _uiState.value.document?.let { document ->
             textSearchEngine.clearCache(Uri.parse(document.uriString))
         }
         session?.close()
         session = null
         bitmapCache.clear()
+        thumbnailCache.clear()
         super.onCleared()
     }
 
@@ -295,15 +349,27 @@ class ReaderViewModel(
         private val settingsRepository: SettingsRepository,
         private val pdfEngine: PdfEngine,
         private val textSearchEngine: PdfTextSearchEngine,
-        private val bitmapCache: PdfBitmapCache
+        private val bitmapCache: PdfBitmapCache,
+        private val thumbnailCache: PdfBitmapCache,
+        private val documentStructureReader: PdfDocumentStructureReader
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ReaderViewModel(documentId, repository, settingsRepository, pdfEngine, textSearchEngine, bitmapCache) as T
+            ReaderViewModel(
+                documentId,
+                repository,
+                settingsRepository,
+                pdfEngine,
+                textSearchEngine,
+                bitmapCache,
+                thumbnailCache,
+                documentStructureReader
+            ) as T
     }
 
     private companion object {
         const val RENDER_RADIUS = 1
         const val CACHE_TRIM_DELAY_MS = 50L
+        const val THUMBNAIL_WIDTH_PX = 150
     }
 }

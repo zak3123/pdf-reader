@@ -142,11 +142,14 @@ class PdfBoxTextSearchEngine(
             PDDocument.load(it).use { document ->
                 if (document.isEncrypted) throw EncryptedPdfException()
                 return List(document.numberOfPages) { pageIndex ->
+                    val rotation = document.getPage(pageIndex).rotation.normalizeRotation()
                     PositionedWordStripper().run {
                         startPage = pageIndex + 1
                         endPage = pageIndex + 1
                         getText(document)
-                        words.toList()
+                        words.map { word ->
+                            word.copy(bounds = word.bounds.rotateForPage(rotation))
+                        }
                     }
                 }
             }
@@ -263,3 +266,36 @@ private fun List<TextPosition>.toNormalizedBounds(): PdfWordHighlight? {
         normH = normBottom - normTop
     )
 }
+
+private fun PdfWordHighlight.rotateForPage(rotation: Int): PdfWordHighlight =
+    when (rotation.normalizeRotation()) {
+        90 -> PdfWordHighlight(
+            normX = 1f - (normY + normH),
+            normY = normX,
+            normW = normH,
+            normH = normW
+        )
+        180 -> PdfWordHighlight(
+            normX = 1f - (normX + normW),
+            normY = 1f - (normY + normH),
+            normW = normW,
+            normH = normH
+        )
+        270 -> PdfWordHighlight(
+            normX = normY,
+            normY = 1f - (normX + normW),
+            normW = normH,
+            normH = normW
+        )
+        else -> this
+    }.clamp()
+
+private fun PdfWordHighlight.clamp(): PdfWordHighlight {
+    val left = normX.coerceIn(0f, 1f)
+    val top = normY.coerceIn(0f, 1f)
+    val right = (normX + normW).coerceIn(left, 1f)
+    val bottom = (normY + normH).coerceIn(top, 1f)
+    return copy(normX = left, normY = top, normW = right - left, normH = bottom - top)
+}
+
+private fun Int.normalizeRotation(): Int = ((this % 360) + 360) % 360

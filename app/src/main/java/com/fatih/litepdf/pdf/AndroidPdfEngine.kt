@@ -3,10 +3,12 @@ package com.fatih.litepdf.pdf
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.tom_roush.pdfbox.pdmodel.PDDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,20 +21,42 @@ class AndroidPdfEngine(
     private val isLowRamDevice: Boolean = false
 ) : PdfEngine {
     override suspend fun open(uri: Uri): PdfDocumentSession = withContext(Dispatchers.IO) {
+        val pageRotations = loadPageRotations(uri)
         val pfd = contentResolver.openFileDescriptor(uri, "r")
             ?: throw IOException("Provider returned no file descriptor")
         try {
-            AndroidPdfDocumentSession(pfd, isLowRamDevice)
+            AndroidPdfDocumentSession(pfd, isLowRamDevice, pageRotations)
         } catch (throwable: Throwable) {
             pfd.close()
             throw throwable
         }
     }
+
+    private fun loadPageRotations(uri: Uri): List<Int> {
+        val inputStream = contentResolver.openInputStream(uri) ?: return emptyList()
+        return try {
+            inputStream.use {
+                PDDocument.load(it).use { document ->
+                    List(document.numberOfPages) { index ->
+                        document.getPage(index).rotation.normalizeRotation()
+                    }
+                }
+            }
+        } catch (throwable: Throwable) {
+            Log.w(TAG, "failed to read page rotation metadata", throwable)
+            emptyList()
+        }
+    }
+
+    private companion object {
+        const val TAG = "PdfEngine"
+    }
 }
 
 class AndroidPdfDocumentSession(
     private val fileDescriptor: ParcelFileDescriptor,
-    private val isLowRamDevice: Boolean = false
+    private val isLowRamDevice: Boolean = false,
+    private val pageRotations: List<Int> = emptyList()
 ) : PdfDocumentSession {
     private val renderer = PdfRenderer(fileDescriptor)
     private val mutex = Mutex()
@@ -71,15 +95,16 @@ class AndroidPdfDocumentSession(
                         val renderStartedAt = System.currentTimeMillis()
                         page.render(rendered, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         val renderMs = System.currentTimeMillis() - renderStartedAt
-                        val cached = createCacheBitmap(rendered)
+                        val displayBitmap = rendered.rotateForDisplay(pageRotation(pageIndex))
+                        val cached = createCacheBitmap(displayBitmap)
                         val totalMs = System.currentTimeMillis() - renderStartedAt
                         Log.d(
                             RENDER_TIMING_TAG,
-                            "page=${pageIndex + 1} target=${target.first}x${target.second} " +
+                            "page=${pageIndex + 1} target=${displayBitmap.width}x${displayBitmap.height} " +
                                 "renderMs=$renderMs totalMs=$totalMs " +
                                 "thread=${Thread.currentThread().name}"
                         )
-                        PdfRenderResult.Success(RenderedPage(pageIndex, cached ?: rendered))
+                        PdfRenderResult.Success(RenderedPage(pageIndex, cached ?: displayBitmap))
                     }
                 }
             } catch (oom: OutOfMemoryError) {
@@ -128,6 +153,9 @@ class AndroidPdfDocumentSession(
         }
     }
 
+    private fun pageRotation(pageIndex: Int): Int =
+        pageRotations.getOrNull(pageIndex)?.normalizeRotation() ?: 0
+
     private fun calculateTargetSize(
         pageWidth: Int,
         pageHeight: Int,
@@ -165,3 +193,16 @@ class AndroidPdfDocumentSession(
         const val ARGB_8888_BYTES_PER_PIXEL = 4
     }
 }
+
+private fun Bitmap.rotateForDisplay(rotation: Int): Bitmap {
+    val normalized = rotation.normalizeRotation()
+    if (normalized == 0) return this
+    val matrix = Matrix().apply { postRotate(normalized.toFloat()) }
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true).also { rotated ->
+        if (rotated !== this && !isRecycled) {
+            recycle()
+        }
+    }
+}
+
+private fun Int.normalizeRotation(): Int = ((this % 360) + 360) % 360

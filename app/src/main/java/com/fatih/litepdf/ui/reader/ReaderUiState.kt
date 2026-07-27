@@ -3,6 +3,8 @@ package com.fatih.litepdf.ui.reader
 import android.graphics.Bitmap
 import com.fatih.litepdf.domain.model.Bookmark
 import com.fatih.litepdf.domain.model.RecentDocument
+import com.fatih.litepdf.pdf.PdfOutlineItem
+import com.fatih.litepdf.pdf.PdfPageLink
 import com.fatih.litepdf.pdf.PdfRenderFailure
 import com.fatih.litepdf.pdf.PdfSearchFailure
 import com.fatih.litepdf.pdf.PdfSearchHit
@@ -17,6 +19,9 @@ data class ReaderUiState(
     val openError: Boolean = false,
     val pageStates: Map<Int, PageRenderState> = emptyMap(),
     val pageAspectRatios: Map<Int, Float> = emptyMap(),
+    val pageThumbnails: Map<Int, Bitmap> = emptyMap(),
+    val outline: List<PdfOutlineItem> = emptyList(),
+    val linksByPage: Map<Int, List<PdfPageLink>> = emptyMap(),
     val bookmarks: List<Bookmark> = emptyList(),
     val searchQuery: String = "",
     val isSearching: Boolean = false,

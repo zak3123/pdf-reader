@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -82,6 +83,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -89,6 +91,7 @@ import com.fatih.litepdf.R
 import com.fatih.litepdf.domain.model.AppSettings
 import com.fatih.litepdf.pdf.PdfSearchFailure
 import com.fatih.litepdf.pdf.PdfWordHighlight
+import com.fatih.litepdf.pdf.PdfPageLink
 import com.fatih.litepdf.util.PageJumpValidator
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -108,7 +111,8 @@ fun ReaderScreen(
     onRemoveBookmark: (Int) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
-    onSearchHitSelected: (Int) -> Unit
+    onSearchHitSelected: (Int) -> Unit,
+    onRenderThumbnail: (Int) -> Unit
 ) {
     val activity = LocalActivity.current
     DisposableEffect(settings.keepScreenAwake) {
@@ -142,7 +146,7 @@ fun ReaderScreen(
 
     val jumpToPage: (Int) -> Unit = { pageIndex ->
         scope.launch {
-            if (layoutMode == ReaderLayoutMode.Continuous) {
+            if (layoutMode != ReaderLayoutMode.SinglePage) {
                 listState.animateScrollToItem(pageIndex)
             }
             onVisiblePageChanged(pageIndex)
@@ -191,6 +195,7 @@ fun ReaderScreen(
                     onSearchHitSelected(pageIndex)
                     jumpToPage(pageIndex)
                 },
+                onRenderThumbnail = onRenderThumbnail,
                 onZoomIn = zoomIn,
                 onZoomOut = zoomOut,
                 onFitWidth = fitWidth,
@@ -376,6 +381,7 @@ private fun ReaderScaffold(
             transformState = transformState,
             onToggleToolbar = onToggleToolbar,
             onDoubleTapZoom = onDoubleTapZoom,
+            onJumpToPage = onJumpToPage,
             onRenderPage = onRenderPage
         )
     }
@@ -395,8 +401,10 @@ private fun ReaderDocumentArea(
     transformState: androidx.compose.foundation.gestures.TransformableState,
     onToggleToolbar: () -> Unit,
     onDoubleTapZoom: () -> Unit,
+    onJumpToPage: (Int) -> Unit,
     onRenderPage: (Int, Int) -> Unit
 ) {
+    val uriHandler = LocalUriHandler.current
     Box(
         modifier = modifier
             .background(MaterialTheme.colorScheme.background)
@@ -431,9 +439,59 @@ private fun ReaderDocumentArea(
                         searchHighlights = state.currentSearchHighlights,
                         isLowRamDevice = isLowRamDevice,
                         shouldRender = true,
+                        renderScale = scale,
                         pageRotation = pageRotation,
+                        pageLinks = state.linksByPage[state.currentPage].orEmpty(),
+                        onLinkClick = { link ->
+                            when {
+                                link.targetPageIndex != null -> onJumpToPage(link.targetPageIndex)
+                                !link.uri.isNullOrBlank() -> uriHandler.openUri(link.uri)
+                            }
+                        },
                         onRenderPage = onRenderPage
                     )
+                }
+            }
+            state.pageCount > 0 && layoutMode == ReaderLayoutMode.Horizontal -> {
+                LazyRow(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offset.x
+                            translationY = offset.y
+                        }
+                        .transformable(transformState),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        end = 12.dp,
+                        top = settings.pageSpacing.dp.dp,
+                        bottom = settings.pageSpacing.dp.dp
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(settings.pageSpacing.dp.dp)
+                ) {
+                    items(state.pageCount) { index ->
+                        PdfPageItem(
+                            pageIndex = index,
+                            renderState = state.pageStates[index],
+                            pageAspectRatio = state.pageAspectRatios[index],
+                            searchHighlights = state.searchHighlightsForPage(index),
+                            isLowRamDevice = isLowRamDevice,
+                            shouldRender = kotlin.math.abs(index - state.currentPage) <= 1,
+                            renderScale = scale,
+                            pageRotation = pageRotation,
+                            pageLinks = state.linksByPage[index].orEmpty(),
+                            onLinkClick = { link ->
+                                when {
+                                    link.targetPageIndex != null -> onJumpToPage(link.targetPageIndex)
+                                    !link.uri.isNullOrBlank() -> uriHandler.openUri(link.uri)
+                                }
+                            },
+                            onRenderPage = onRenderPage
+                        )
+                    }
                 }
             }
             state.pageCount > 0 -> {
@@ -464,7 +522,15 @@ private fun ReaderDocumentArea(
                             searchHighlights = state.searchHighlightsForPage(index),
                             isLowRamDevice = isLowRamDevice,
                             shouldRender = kotlin.math.abs(index - state.currentPage) <= 1,
+                            renderScale = scale,
                             pageRotation = pageRotation,
+                            pageLinks = state.linksByPage[index].orEmpty(),
+                            onLinkClick = { link ->
+                                when {
+                                    link.targetPageIndex != null -> onJumpToPage(link.targetPageIndex)
+                                    !link.uri.isNullOrBlank() -> uriHandler.openUri(link.uri)
+                                }
+                            },
                             onRenderPage = onRenderPage
                         )
                     }
@@ -490,6 +556,7 @@ private fun ReaderNavigationPanel(
     onSearchQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onSearchHitSelected: (Int) -> Unit,
+    onRenderThumbnail: (Int) -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onFitWidth: () -> Unit,
@@ -541,6 +608,11 @@ private fun ReaderNavigationPanel(
                         selected = layoutMode == ReaderLayoutMode.SinglePage,
                         onClick = { onLayoutModeChange(ReaderLayoutMode.SinglePage) },
                         label = { Text(stringResource(R.string.mode_single_page)) }
+                    )
+                    FilterChip(
+                        selected = layoutMode == ReaderLayoutMode.Horizontal,
+                        onClick = { onLayoutModeChange(ReaderLayoutMode.Horizontal) },
+                        label = { Text("Horizontal") }
                     )
                 }
                 HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
@@ -710,13 +782,54 @@ private fun ReaderNavigationPanel(
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                NavigationSectionTitle("Outline")
+            }
+            if (state.outline.isEmpty()) {
+                item {
+                    Text(
+                        text = "No outline",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                items(state.outline.size) { outlineIndex ->
+                    val item = state.outline[outlineIndex]
+                    ListItem(
+                        modifier = Modifier
+                            .clickable { onJumpToPage(item.pageIndex) }
+                            .padding(start = (item.depth * 12).dp),
+                        headlineContent = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        supportingContent = {
+                            Text(stringResource(R.string.page_position_unknown_total, item.pageIndex + 1))
+                        }
+                    )
+                }
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
                 NavigationSectionTitle(stringResource(R.string.pages))
             }
             items(state.pageCount) { pageIndex ->
+                LaunchedEffect(pageIndex) {
+                    onRenderThumbnail(pageIndex)
+                }
                 ListItem(
                     modifier = Modifier.clickable { onJumpToPage(pageIndex) },
                     leadingContent = {
-                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null)
+                        val thumbnail = state.pageThumbnails[pageIndex]
+                        if (thumbnail != null && !thumbnail.isRecycled) {
+                            Image(
+                                bitmap = thumbnail.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .width(44.dp)
+                                    .height(60.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null)
+                        }
                     },
                     headlineContent = {
                         Text(stringResource(R.string.page_position_unknown_total, pageIndex + 1))
@@ -788,7 +901,10 @@ private fun PdfPageItem(
     searchHighlights: List<PdfWordHighlight>,
     isLowRamDevice: Boolean,
     shouldRender: Boolean,
+    renderScale: Float,
     pageRotation: Int,
+    pageLinks: List<PdfPageLink>,
+    onLinkClick: (PdfPageLink) -> Unit,
     onRenderPage: (Int, Int) -> Unit
 ) {
     val density = LocalDensity.current
@@ -806,9 +922,10 @@ private fun PdfPageItem(
         contentAlignment = Alignment.Center
     ) {
         val targetWidthPx = with(density) {
-            maxWidth.roundToPx().coerceAtMost(
-                if (isLowRamDevice) LOW_RAM_TARGET_WIDTH_PX else NORMAL_TARGET_WIDTH_PX
-            )
+            val baseWidth = (maxWidth.roundToPx() * renderScale).roundToInt()
+            baseWidth.coerceAtMost(
+                if (isLowRamDevice) LOW_RAM_TARGET_WIDTH_PX else MAX_ZOOM_TARGET_WIDTH_PX
+            ).coerceAtLeast(MIN_TARGET_WIDTH_PX)
         }
         LaunchedEffect(pageIndex, targetWidthPx, shouldRender) {
             if (shouldRender) {
@@ -848,6 +965,23 @@ private fun PdfPageItem(
                             }
                         }
                     }
+                    if (pageLinks.isNotEmpty()) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(pageLinks) {
+                                    detectTapGestures { tap ->
+                                        pageLinks.firstOrNull { link ->
+                                            val left = link.bounds.normX * size.width
+                                            val top = link.bounds.normY * size.height
+                                            val right = left + link.bounds.normW * size.width
+                                            val bottom = top + link.bounds.normH * size.height
+                                            tap.x in left..right && tap.y in top..bottom
+                                        }?.let(onLinkClick)
+                                    }
+                                }
+                        ) {}
+                    }
                 }
             }
             is PageRenderState.Failed -> ErrorMessage(stringResource(R.string.page_render_failed))
@@ -858,7 +992,8 @@ private fun PdfPageItem(
 
 private const val DEFAULT_PAGE_ASPECT_RATIO = 1f / 1.414f
 private const val LOW_RAM_TARGET_WIDTH_PX = 1400
-private const val NORMAL_TARGET_WIDTH_PX = 1800
+private const val MIN_TARGET_WIDTH_PX = 120
+private const val MAX_ZOOM_TARGET_WIDTH_PX = 2800
 private const val TABLET_NAVIGATION_BREAKPOINT_DP = 600
 private const val EXPANDED_NAVIGATION_BREAKPOINT_DP = 840
 private const val MEDIUM_NAVIGATION_WIDTH_DP = 320
@@ -885,7 +1020,8 @@ private fun ErrorMessage(text: String) {
 
 private enum class ReaderLayoutMode {
     Continuous,
-    SinglePage
+    SinglePage,
+    Horizontal
 }
 
 @Composable

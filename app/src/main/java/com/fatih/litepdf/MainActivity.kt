@@ -171,7 +171,9 @@ private fun LitePdfApp(
                     settingsRepository = container.settingsRepository,
                     pdfEngine = container.pdfEngine,
                     textSearchEngine = container.textSearchEngine,
-                    bitmapCache = container.bitmapCache
+                    bitmapCache = container.bitmapCache,
+                    thumbnailCache = container.thumbnailCache,
+                    documentStructureReader = container.documentStructureReader
                 )
             )
             val readerState by readerViewModel.uiState.collectAsStateWithLifecycle()
@@ -187,7 +189,8 @@ private fun LitePdfApp(
                 onRemoveBookmark = readerViewModel::removeBookmark,
                 onSearchQueryChange = readerViewModel::updateSearchQuery,
                 onSearch = readerViewModel::searchText,
-                onSearchHitSelected = readerViewModel::selectSearchHit
+                onSearchHitSelected = readerViewModel::selectSearchHit,
+                onRenderThumbnail = readerViewModel::renderThumbnail
             )
         }
         composable(Routes.Settings) {
