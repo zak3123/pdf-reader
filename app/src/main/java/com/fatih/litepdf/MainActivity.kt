@@ -182,6 +182,7 @@ private fun LitePdfApp(
                 settings = settings,
                 isLowRamDevice = container.isLowRamDevice,
                 onBack = { navController.popBackStack() },
+                onOpenDocument = { openDocumentLauncher.launch(arrayOf("application/pdf")) },
                 onToggleToolbar = readerViewModel::toggleToolbar,
                 onVisiblePageChanged = readerViewModel::onVisiblePageChanged,
                 onRenderPage = readerViewModel::renderPage,

@@ -5,6 +5,7 @@ import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -31,12 +32,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.LastPage
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ZoomIn
@@ -46,6 +53,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -61,7 +70,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -75,6 +83,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -93,6 +102,7 @@ import com.fatih.litepdf.pdf.PdfSearchFailure
 import com.fatih.litepdf.pdf.PdfWordHighlight
 import com.fatih.litepdf.pdf.PdfPageLink
 import com.fatih.litepdf.util.PageJumpValidator
+import com.fatih.litepdf.ui.theme.SumatraLikeColors
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -104,6 +114,7 @@ fun ReaderScreen(
     settings: AppSettings,
     isLowRamDevice: Boolean,
     onBack: () -> Unit,
+    onOpenDocument: () -> Unit,
     onToggleToolbar: () -> Unit,
     onVisiblePageChanged: (Int) -> Unit,
     onRenderPage: (Int, Int) -> Unit,
@@ -219,6 +230,7 @@ fun ReaderScreen(
                     transformState = transformState,
                     showNavigationButton = false,
                     onBack = onBack,
+                    onOpenDocument = onOpenDocument,
                     onToggleToolbar = onToggleToolbar,
                     onOpenNavigation = {},
                     onShowJumpDialog = { showJumpDialog = true },
@@ -249,6 +261,7 @@ fun ReaderScreen(
                     transformState = transformState,
                     showNavigationButton = true,
                     onBack = onBack,
+                    onOpenDocument = onOpenDocument,
                     onToggleToolbar = onToggleToolbar,
                     onOpenNavigation = { scope.launch { drawerState.open() } },
                     onShowJumpDialog = { showJumpDialog = true },
@@ -276,6 +289,108 @@ fun ReaderScreen(
     }
 }
 
+@Composable
+private fun ReaderToolbar(
+    state: ReaderUiState,
+    showNavigationButton: Boolean,
+    onBack: () -> Unit,
+    onOpenDocument: () -> Unit,
+    onPreviousPage: () -> Unit,
+    onNextPage: () -> Unit,
+    onShowJumpDialog: () -> Unit,
+    onBookmarkCurrentPage: () -> Unit,
+    onOpenNavigation: () -> Unit,
+    onDoubleTapZoom: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Surface(
+        color = SumatraLikeColors.ToolbarLight,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, SumatraLikeColors.DividerLight)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.back))
+            }
+            IconButton(onClick = onOpenDocument) {
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_pdf))
+            }
+            Text(
+                text = state.document?.displayName.orEmpty(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp)
+            )
+            IconButton(onClick = onPreviousPage, enabled = state.currentPage > 0) {
+                Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
+            }
+            Text(
+                text = "${state.currentPage + 1}",
+                modifier = Modifier
+                    .border(1.dp, SumatraLikeColors.DividerLight)
+                    .clickable(onClick = onShowJumpDialog)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            )
+            Text(
+                text = "/ ${state.pageCount}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 6.dp)
+            )
+            IconButton(onClick = onNextPage, enabled = state.currentPage < state.pageCount - 1) {
+                Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.next_page))
+            }
+            IconButton(onClick = onDoubleTapZoom) {
+                Icon(Icons.Default.ZoomOutMap, contentDescription = stringResource(R.string.fit_width))
+            }
+            IconButton(onClick = onOpenNavigation) {
+                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_document))
+            }
+            if (showNavigationButton) {
+                IconButton(onClick = onOpenNavigation) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.navigation_panel))
+                }
+            }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.bookmark_page)) },
+                        onClick = {
+                            menuExpanded = false
+                            onBookmarkCurrentPage()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (state.currentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.jump_to_page)) },
+                        onClick = {
+                            menuExpanded = false
+                            onShowJumpDialog()
+                        },
+                        leadingIcon = { Icon(Icons.Default.FormatListNumbered, contentDescription = null) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReaderScaffold(
@@ -291,6 +406,7 @@ private fun ReaderScaffold(
     transformState: androidx.compose.foundation.gestures.TransformableState,
     showNavigationButton: Boolean,
     onBack: () -> Unit,
+    onOpenDocument: () -> Unit,
     onToggleToolbar: () -> Unit,
     onOpenNavigation: () -> Unit,
     onShowJumpDialog: () -> Unit,
@@ -303,39 +419,17 @@ private fun ReaderScaffold(
         modifier = modifier,
         topBar = {
             if (state.toolbarVisible) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            state.document?.displayName.orEmpty(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onShowJumpDialog) {
-                            Icon(Icons.Default.FormatListNumbered, contentDescription = stringResource(R.string.jump_to_page))
-                        }
-                        IconButton(onClick = onBookmarkCurrentPage) {
-                            Icon(
-                                if (state.currentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                contentDescription = if (state.currentPageBookmarked) {
-                                    stringResource(R.string.remove_bookmark)
-                                } else {
-                                    stringResource(R.string.bookmark_page)
-                                }
-                            )
-                        }
-                        if (showNavigationButton) {
-                            IconButton(onClick = onOpenNavigation) {
-                                Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.navigation_panel))
-                            }
-                        }
-                    }
+                ReaderToolbar(
+                    state = state,
+                    showNavigationButton = showNavigationButton,
+                    onBack = onBack,
+                    onOpenDocument = onOpenDocument,
+                    onPreviousPage = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
+                    onNextPage = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
+                    onShowJumpDialog = onShowJumpDialog,
+                    onBookmarkCurrentPage = onBookmarkCurrentPage,
+                    onOpenNavigation = onOpenNavigation,
+                    onDoubleTapZoom = onDoubleTapZoom
                 )
             }
         },
@@ -344,19 +438,23 @@ private fun ReaderScaffold(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .background(SumatraLikeColors.ToolbarLight)
+                        .border(1.dp, SumatraLikeColors.DividerLight)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    FilledTonalIconButton(
+                    IconButton(
                         onClick = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
                         enabled = state.currentPage > 0
                     ) {
                         Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
                     }
-                    Text(stringResource(R.string.page_position, state.currentPage + 1, state.pageCount))
-                    FilledTonalIconButton(
+                    Text(
+                        stringResource(R.string.page_position, state.currentPage + 1, state.pageCount),
+                        modifier = Modifier.clickable(onClick = onShowJumpDialog)
+                    )
+                    IconButton(
                         onClick = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
                         enabled = state.currentPage < state.pageCount - 1
                     ) {
@@ -407,7 +505,7 @@ private fun ReaderDocumentArea(
     val uriHandler = LocalUriHandler.current
     Box(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.background)
+            .background(SumatraLikeColors.CanvasLight)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onToggleToolbar() },
@@ -918,7 +1016,9 @@ private fun PdfPageItem(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(displayAspectRatio)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .shadow(3.dp, clip = false)
+            .border(1.dp, SumatraLikeColors.DividerLight)
+            .background(androidx.compose.ui.graphics.Color.White),
         contentAlignment = Alignment.Center
     ) {
         val targetWidthPx = with(density) {
