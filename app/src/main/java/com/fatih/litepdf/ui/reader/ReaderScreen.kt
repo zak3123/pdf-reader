@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +24,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,15 +42,11 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FirstPage
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,8 +55,6 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,6 +89,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,6 +136,7 @@ fun ReaderScreen(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = state.currentPage)
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val configuration = LocalConfiguration.current
     var showJumpDialog by remember { mutableStateOf(false) }
     var scale by remember { mutableFloatStateOf(1f) }
     var pageRotation by remember { mutableStateOf(0) }
@@ -165,13 +164,6 @@ fun ReaderScreen(
         }
     }
 
-    val zoomIn = {
-        scale = (scale + 0.25f).coerceAtMost(4f)
-    }
-    val zoomOut = {
-        scale = (scale - 0.25f).coerceAtLeast(1f)
-        if (scale == 1f) offset = Offset.Zero
-    }
     val fitWidth = {
         scale = 1f
         offset = Offset.Zero
@@ -181,7 +173,9 @@ fun ReaderScreen(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val usePermanentNavigation = maxWidth >= TABLET_NAVIGATION_BREAKPOINT_DP.dp
+        val usePermanentNavigation =
+            configuration.smallestScreenWidthDp >= TABLET_SMALLEST_WIDTH_DP &&
+                maxWidth >= TABLET_NAVIGATION_BREAKPOINT_DP.dp
         val navigationPanelWidth = if (maxWidth >= EXPANDED_NAVIGATION_BREAKPOINT_DP.dp) {
             EXPANDED_NAVIGATION_WIDTH_DP.dp
         } else {
@@ -190,14 +184,9 @@ fun ReaderScreen(
         val navigationPanel: @Composable () -> Unit = {
             ReaderNavigationPanel(
                 state = state,
-                layoutMode = layoutMode,
-                scale = scale,
-                pageRotation = pageRotation,
                 permanent = usePermanentNavigation,
                 panelWidth = navigationPanelWidth,
-                onLayoutModeChange = { layoutMode = it },
                 onJumpToPage = jumpToPage,
-                onShowJumpDialog = { showJumpDialog = true },
                 onBookmarkCurrentPage = onBookmarkCurrentPage,
                 onRemoveBookmark = onRemoveBookmark,
                 onSearchQueryChange = onSearchQueryChange,
@@ -207,10 +196,7 @@ fun ReaderScreen(
                     jumpToPage(pageIndex)
                 },
                 onRenderThumbnail = onRenderThumbnail,
-                onZoomIn = zoomIn,
-                onZoomOut = zoomOut,
-                onFitWidth = fitWidth,
-                onRotate = rotate
+                onCloseNavigation = { scope.launch { drawerState.close() } }
             )
         }
 
@@ -235,6 +221,9 @@ fun ReaderScreen(
                     onOpenNavigation = {},
                     onShowJumpDialog = { showJumpDialog = true },
                     onBookmarkCurrentPage = onBookmarkCurrentPage,
+                    onLayoutModeChange = { layoutMode = it },
+                    onFitWidth = fitWidth,
+                    onRotate = rotate,
                     onJumpToPage = jumpToPage,
                     onRenderPage = onRenderPage,
                     onDoubleTapZoom = {
@@ -248,31 +237,46 @@ fun ReaderScreen(
                 drawerState = drawerState,
                 drawerContent = navigationPanel
             ) {
-                ReaderScaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    state = state,
-                    settings = settings,
-                    isLowRamDevice = isLowRamDevice,
-                    layoutMode = layoutMode,
-                    listState = listState,
-                    scale = scale,
-                    offset = offset,
-                    pageRotation = pageRotation,
-                    transformState = transformState,
-                    showNavigationButton = true,
-                    onBack = onBack,
-                    onOpenDocument = onOpenDocument,
-                    onToggleToolbar = onToggleToolbar,
-                    onOpenNavigation = { scope.launch { drawerState.open() } },
-                    onShowJumpDialog = { showJumpDialog = true },
-                    onBookmarkCurrentPage = onBookmarkCurrentPage,
-                    onJumpToPage = jumpToPage,
-                    onRenderPage = onRenderPage,
-                    onDoubleTapZoom = {
-                        scale = if (scale == 1f) 2f else 1f
-                        offset = Offset.Zero
-                    }
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ReaderScaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        state = state,
+                        settings = settings,
+                        isLowRamDevice = isLowRamDevice,
+                        layoutMode = layoutMode,
+                        listState = listState,
+                        scale = scale,
+                        offset = offset,
+                        pageRotation = pageRotation,
+                        transformState = transformState,
+                        showNavigationButton = true,
+                        onBack = onBack,
+                        onOpenDocument = onOpenDocument,
+                        onToggleToolbar = onToggleToolbar,
+                        onOpenNavigation = { scope.launch { drawerState.open() } },
+                        onShowJumpDialog = { showJumpDialog = true },
+                        onBookmarkCurrentPage = onBookmarkCurrentPage,
+                        onLayoutModeChange = { layoutMode = it },
+                        onFitWidth = fitWidth,
+                        onRotate = rotate,
+                        onJumpToPage = jumpToPage,
+                        onRenderPage = onRenderPage,
+                        onDoubleTapZoom = {
+                            scale = if (scale == 1f) 2f else 1f
+                            offset = Offset.Zero
+                        }
+                    )
+                    SidebarDragHandle(
+                        expanded = drawerState.isOpen,
+                        onToggle = {
+                            scope.launch {
+                                if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                            }
+                        },
+                        onDragOpen = { scope.launch { drawerState.open() } },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    )
+                }
             }
         }
     }
@@ -290,23 +294,68 @@ fun ReaderScreen(
 }
 
 @Composable
+private fun SidebarDragHandle(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onDragOpen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .width(SIDEBAR_HANDLE_TOUCH_WIDTH_DP.dp)
+            .height(SIDEBAR_HANDLE_HEIGHT_DP.dp)
+            .pointerInput(expanded) {
+                detectHorizontalDragGestures { _, dragAmount ->
+                    if (!expanded && dragAmount > 8f) {
+                        onDragOpen()
+                    }
+                }
+            }
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+            tonalElevation = 2.dp,
+            modifier = Modifier
+                .width(SIDEBAR_HANDLE_VISUAL_WIDTH_DP.dp)
+                .fillMaxHeight()
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ChevronLeft else Icons.Default.ChevronRight,
+                    contentDescription = if (expanded) {
+                        "Close navigation panel"
+                    } else {
+                        "Open navigation panel"
+                    },
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ReaderToolbar(
     state: ReaderUiState,
+    layoutMode: ReaderLayoutMode,
     showNavigationButton: Boolean,
     onBack: () -> Unit,
     onOpenDocument: () -> Unit,
-    onPreviousPage: () -> Unit,
-    onNextPage: () -> Unit,
     onShowJumpDialog: () -> Unit,
     onBookmarkCurrentPage: () -> Unit,
-    onOpenNavigation: () -> Unit,
-    onDoubleTapZoom: () -> Unit
+    onLayoutModeChange: (ReaderLayoutMode) -> Unit,
+    onFitWidth: () -> Unit,
+    onRotate: () -> Unit,
+    onOpenNavigation: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Surface(
         color = SumatraLikeColors.ToolbarLight,
         modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .border(1.dp, SumatraLikeColors.DividerLight)
     ) {
         Row(
@@ -317,10 +366,7 @@ private fun ReaderToolbar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.back))
-            }
-            IconButton(onClick = onOpenDocument) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = stringResource(R.string.open_pdf))
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
             }
             Text(
                 text = state.document?.displayName.orEmpty(),
@@ -330,29 +376,14 @@ private fun ReaderToolbar(
                     .weight(1f)
                     .padding(horizontal = 6.dp)
             )
-            IconButton(onClick = onPreviousPage, enabled = state.currentPage > 0) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
-            }
-            Text(
-                text = "${state.currentPage + 1}",
-                modifier = Modifier
-                    .border(1.dp, SumatraLikeColors.DividerLight)
-                    .clickable(onClick = onShowJumpDialog)
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
-            )
-            Text(
-                text = "/ ${state.pageCount}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 6.dp)
-            )
-            IconButton(onClick = onNextPage, enabled = state.currentPage < state.pageCount - 1) {
-                Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.next_page))
-            }
-            IconButton(onClick = onDoubleTapZoom) {
-                Icon(Icons.Default.ZoomOutMap, contentDescription = stringResource(R.string.fit_width))
-            }
             IconButton(onClick = onOpenNavigation) {
                 Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_document))
+            }
+            IconButton(onClick = onBookmarkCurrentPage) {
+                Icon(
+                    if (state.currentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = stringResource(R.string.bookmark_page)
+                )
             }
             if (showNavigationButton) {
                 IconButton(onClick = onOpenNavigation) {
@@ -365,17 +396,12 @@ private fun ReaderToolbar(
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.bookmark_page)) },
+                        text = { Text(stringResource(R.string.open_pdf)) },
                         onClick = {
                             menuExpanded = false
-                            onBookmarkCurrentPage()
+                            onOpenDocument()
                         },
-                        leadingIcon = {
-                            Icon(
-                                if (state.currentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                contentDescription = null
-                            )
-                        }
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.jump_to_page)) },
@@ -384,6 +410,58 @@ private fun ReaderToolbar(
                             onShowJumpDialog()
                         },
                         leadingIcon = { Icon(Icons.Default.FormatListNumbered, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.fit_width)) },
+                        onClick = {
+                            menuExpanded = false
+                            onFitWidth()
+                        },
+                        leadingIcon = { Icon(Icons.Default.ZoomOutMap, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.mode_continuous)) },
+                        onClick = {
+                            menuExpanded = false
+                            onLayoutModeChange(ReaderLayoutMode.Continuous)
+                        },
+                        leadingIcon = if (layoutMode == ReaderLayoutMode.Continuous) {
+                            { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+                        } else {
+                            null
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.mode_single_page)) },
+                        onClick = {
+                            menuExpanded = false
+                            onLayoutModeChange(ReaderLayoutMode.SinglePage)
+                        },
+                        leadingIcon = if (layoutMode == ReaderLayoutMode.SinglePage) {
+                            { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+                        } else {
+                            null
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Horizontal") },
+                        onClick = {
+                            menuExpanded = false
+                            onLayoutModeChange(ReaderLayoutMode.Horizontal)
+                        },
+                        leadingIcon = if (layoutMode == ReaderLayoutMode.Horizontal) {
+                            { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+                        } else {
+                            null
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.rotate_page)) },
+                        onClick = {
+                            menuExpanded = false
+                            onRotate()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Rotate90DegreesCw, contentDescription = null) }
                     )
                 }
             }
@@ -411,6 +489,9 @@ private fun ReaderScaffold(
     onOpenNavigation: () -> Unit,
     onShowJumpDialog: () -> Unit,
     onBookmarkCurrentPage: () -> Unit,
+    onLayoutModeChange: (ReaderLayoutMode) -> Unit,
+    onFitWidth: () -> Unit,
+    onRotate: () -> Unit,
     onJumpToPage: (Int) -> Unit,
     onRenderPage: (Int, Int) -> Unit,
     onDoubleTapZoom: () -> Unit
@@ -421,15 +502,16 @@ private fun ReaderScaffold(
             if (state.toolbarVisible) {
                 ReaderToolbar(
                     state = state,
+                    layoutMode = layoutMode,
                     showNavigationButton = showNavigationButton,
                     onBack = onBack,
                     onOpenDocument = onOpenDocument,
-                    onPreviousPage = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
-                    onNextPage = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
                     onShowJumpDialog = onShowJumpDialog,
                     onBookmarkCurrentPage = onBookmarkCurrentPage,
-                    onOpenNavigation = onOpenNavigation,
-                    onDoubleTapZoom = onDoubleTapZoom
+                    onLayoutModeChange = onLayoutModeChange,
+                    onFitWidth = onFitWidth,
+                    onRotate = onRotate,
+                    onOpenNavigation = onOpenNavigation
                 )
             }
         },
@@ -438,6 +520,7 @@ private fun ReaderScaffold(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .navigationBarsPadding()
                         .background(SumatraLikeColors.ToolbarLight)
                         .border(1.dp, SumatraLikeColors.DividerLight)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
@@ -641,39 +724,48 @@ private fun ReaderDocumentArea(
 @Composable
 private fun ReaderNavigationPanel(
     state: ReaderUiState,
-    layoutMode: ReaderLayoutMode,
-    scale: Float,
-    pageRotation: Int,
     permanent: Boolean,
     panelWidth: androidx.compose.ui.unit.Dp,
-    onLayoutModeChange: (ReaderLayoutMode) -> Unit,
     onJumpToPage: (Int) -> Unit,
-    onShowJumpDialog: () -> Unit,
     onBookmarkCurrentPage: () -> Unit,
     onRemoveBookmark: (Int) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onSearchHitSelected: (Int) -> Unit,
     onRenderThumbnail: (Int) -> Unit,
-    onZoomIn: () -> Unit,
-    onZoomOut: () -> Unit,
-    onFitWidth: () -> Unit,
-    onRotate: () -> Unit
+    onCloseNavigation: () -> Unit
 ) {
     val panelModifier = Modifier
         .width(panelWidth)
         .fillMaxHeight()
+        .pointerInput(permanent) {
+            if (!permanent) {
+                detectHorizontalDragGestures { _, dragAmount ->
+                    if (dragAmount < -8f) {
+                        onCloseNavigation()
+                    }
+                }
+            }
+        }
     val content: @Composable () -> Unit = {
         LazyColumn(
             contentPadding = PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             item {
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                    Text(
-                        text = stringResource(R.string.navigation_panel),
-                        style = MaterialTheme.typography.titleLarge
-                    )
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.navigation_panel),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (!permanent) {
+                            IconButton(onClick = onCloseNavigation) {
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                            }
+                        }
+                    }
                     Text(
                         text = state.document?.displayName.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
@@ -690,100 +782,6 @@ private fun ReaderNavigationPanel(
                     }
                 }
                 HorizontalDivider()
-            }
-            item {
-                NavigationSectionTitle(stringResource(R.string.view_mode))
-                Row(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = layoutMode == ReaderLayoutMode.Continuous,
-                        onClick = { onLayoutModeChange(ReaderLayoutMode.Continuous) },
-                        label = { Text(stringResource(R.string.mode_continuous)) }
-                    )
-                    FilterChip(
-                        selected = layoutMode == ReaderLayoutMode.SinglePage,
-                        onClick = { onLayoutModeChange(ReaderLayoutMode.SinglePage) },
-                        label = { Text(stringResource(R.string.mode_single_page)) }
-                    )
-                    FilterChip(
-                        selected = layoutMode == ReaderLayoutMode.Horizontal,
-                        onClick = { onLayoutModeChange(ReaderLayoutMode.Horizontal) },
-                        label = { Text("Horizontal") }
-                    )
-                }
-                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
-            }
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledTonalIconButton(
-                        onClick = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
-                        enabled = state.currentPage > 0
-                    ) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
-                    }
-                    FilledTonalIconButton(
-                        onClick = onShowJumpDialog,
-                        enabled = state.pageCount > 0
-                    ) {
-                        Icon(Icons.Default.FormatListNumbered, contentDescription = stringResource(R.string.jump_to_page))
-                    }
-                    FilledTonalIconButton(
-                        onClick = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
-                        enabled = state.currentPage < state.pageCount - 1
-                    ) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.next_page))
-                    }
-                    FilledTonalIconButton(
-                        onClick = onBookmarkCurrentPage,
-                        enabled = state.pageCount > 0
-                    ) {
-                        Icon(
-                            if (state.currentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                            contentDescription = stringResource(R.string.bookmark_page)
-                        )
-                    }
-                }
-                HorizontalDivider()
-            }
-            item {
-                NavigationSectionTitle(stringResource(R.string.view_controls))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledTonalIconButton(onClick = onZoomOut, enabled = scale > 1f) {
-                        Icon(Icons.Default.ZoomOut, contentDescription = stringResource(R.string.zoom_out))
-                    }
-                    FilledTonalIconButton(onClick = onZoomIn, enabled = scale < 4f) {
-                        Icon(Icons.Default.ZoomIn, contentDescription = stringResource(R.string.zoom_in))
-                    }
-                    FilledTonalIconButton(onClick = onFitWidth) {
-                        Icon(Icons.Default.ZoomOutMap, contentDescription = stringResource(R.string.fit_width))
-                    }
-                    FilledTonalIconButton(onClick = onRotate) {
-                        Icon(Icons.Default.Rotate90DegreesCw, contentDescription = stringResource(R.string.rotate_page))
-                    }
-                }
-                Text(
-                    text = stringResource(
-                        R.string.view_status,
-                        (scale * 100f).roundToInt(),
-                        pageRotation
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
-                )
-                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
             }
             item {
                 NavigationSectionTitle(stringResource(R.string.bookmarks))
@@ -1094,10 +1092,14 @@ private const val DEFAULT_PAGE_ASPECT_RATIO = 1f / 1.414f
 private const val LOW_RAM_TARGET_WIDTH_PX = 1400
 private const val MIN_TARGET_WIDTH_PX = 120
 private const val MAX_ZOOM_TARGET_WIDTH_PX = 2800
-private const val TABLET_NAVIGATION_BREAKPOINT_DP = 600
+private const val TABLET_SMALLEST_WIDTH_DP = 600
+private const val TABLET_NAVIGATION_BREAKPOINT_DP = 840
 private const val EXPANDED_NAVIGATION_BREAKPOINT_DP = 840
 private const val MEDIUM_NAVIGATION_WIDTH_DP = 320
 private const val EXPANDED_NAVIGATION_WIDTH_DP = 360
+private const val SIDEBAR_HANDLE_TOUCH_WIDTH_DP = 40
+private const val SIDEBAR_HANDLE_VISUAL_WIDTH_DP = 10
+private const val SIDEBAR_HANDLE_HEIGHT_DP = 64
 private val SEARCH_HIGHLIGHT_COLOR = Color(0xFFFFEB3B).copy(alpha = 0.45f)
 
 @Composable
