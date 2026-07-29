@@ -1,5 +1,6 @@
 package com.fatih.litepdf.ui.reader
 
+import com.fatih.litepdf.util.normalizeRotation
 import kotlin.math.min
 
 data class PageTransform(
@@ -29,7 +30,11 @@ data class PageTransform(
         is ZoomMode.Percent -> zoomMode.value / 100f
     }
     val totalScale: Float = (baseScale * userScale).coerceAtLeast(0.05f)
+    val displayWidth: Float = rotatedWidth * totalScale
+    val displayHeight: Float = rotatedHeight * totalScale
 }
+
+typealias PageGeometry = PageTransform
 
 sealed interface ZoomMode {
     data object FitPage : ZoomMode
@@ -37,5 +42,3 @@ sealed interface ZoomMode {
     data object ActualSize : ZoomMode
     data class Percent(val value: Float) : ZoomMode
 }
-
-fun Int.normalizeRotation(): Int = ((this % 360) + 360) % 360

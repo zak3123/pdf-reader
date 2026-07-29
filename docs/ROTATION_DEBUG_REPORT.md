@@ -6,6 +6,9 @@
 - `PdfRenderer.Page.render(...)` renders into an ARGB_8888 bitmap.
 - The rendered bitmap is rotated in `AndroidPdfEngine.rotateForDisplay(pageRotation(pageIndex))`.
 - The reader UI has a separate manual `pageRotation` state driven by the rotate action.
+- Rotation normalization is centralized in `com.fatih.litepdf.util.normalizeRotation()`.
+- `PageTransform` is the current page-geometry source for rotated dimensions, fit scale, and display size.
+- `AndroidPdfEngine` logs `PdfRotationDebug` for source size, metadata rotation, rendered bitmap size, display bitmap size, and requested width.
 
 ## Double-Rotation Assessment
 
@@ -22,12 +25,4 @@ Search highlight and link overlay geometry are drawn in the Compose page box. If
 
 ## Recommended Next Step
 
-Create a single `PageGeometry` source of truth and add `PdfRotationDebug` logs for:
-
-- source page width/height;
-- metadata rotation;
-- user rotation;
-- effective display rotation;
-- bitmap width/height;
-- container width/height;
-- fit mode and viewport size.
+Wire `PageTransform` deeper into `ReaderScreen` overlays so bitmap, search highlight, and link hit testing all use the same geometry during manual rotation.

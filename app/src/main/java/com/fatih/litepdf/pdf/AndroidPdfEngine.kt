@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.fatih.litepdf.util.normalizeRotation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -95,14 +96,26 @@ class AndroidPdfDocumentSession(
                         val renderStartedAt = System.currentTimeMillis()
                         page.render(rendered, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         val renderMs = System.currentTimeMillis() - renderStartedAt
-                        val displayBitmap = rendered.rotateForDisplay(pageRotation(pageIndex))
+                        val renderedWidth = rendered.width
+                        val renderedHeight = rendered.height
+                        val metadataRotation = pageRotation(pageIndex)
+                        val displayBitmap = rendered.rotateForDisplay(metadataRotation)
+                        val displayWidth = displayBitmap.width
+                        val displayHeight = displayBitmap.height
                         val cached = createCacheBitmap(displayBitmap)
                         val totalMs = System.currentTimeMillis() - renderStartedAt
                         Log.d(
                             RENDER_TIMING_TAG,
-                            "page=${pageIndex + 1} target=${displayBitmap.width}x${displayBitmap.height} " +
+                            "page=${pageIndex + 1} target=${displayWidth}x${displayHeight} " +
                                 "renderMs=$renderMs totalMs=$totalMs " +
                                 "thread=${Thread.currentThread().name}"
+                        )
+                        Log.d(
+                            ROTATION_DEBUG_TAG,
+                            "page=${pageIndex + 1} source=${page.width}x${page.height} " +
+                                "metadata=$metadataRotation rendered=${renderedWidth}x$renderedHeight " +
+                                "display=${displayWidth}x$displayHeight " +
+                                "requestedWidth=$targetWidthPx"
                         )
                         PdfRenderResult.Success(RenderedPage(pageIndex, cached ?: displayBitmap))
                     }
@@ -189,6 +202,7 @@ class AndroidPdfDocumentSession(
     private companion object {
         const val TAG = "PdfEngine"
         const val RENDER_TIMING_TAG = "PdfRenderTiming"
+        const val ROTATION_DEBUG_TAG = "PdfRotationDebug"
         const val RGB_565_BYTES_PER_PIXEL = 2
         const val ARGB_8888_BYTES_PER_PIXEL = 4
     }
@@ -204,5 +218,3 @@ private fun Bitmap.rotateForDisplay(rotation: Int): Bitmap {
         }
     }
 }
-
-private fun Int.normalizeRotation(): Int = ((this % 360) + 360) % 360

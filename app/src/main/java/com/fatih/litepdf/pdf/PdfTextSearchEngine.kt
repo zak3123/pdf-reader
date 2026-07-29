@@ -5,6 +5,7 @@ import android.net.Uri
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
+import com.fatih.litepdf.util.normalizeRotation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -297,5 +298,3 @@ private fun PdfWordHighlight.clamp(): PdfWordHighlight {
     val bottom = (normY + normH).coerceIn(top, 1f)
     return copy(normX = left, normY = top, normW = right - left, normH = bottom - top)
 }
-
-private fun Int.normalizeRotation(): Int = ((this % 360) + 360) % 360
