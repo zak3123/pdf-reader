@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -50,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.fatih.litepdf.R
 import com.fatih.litepdf.domain.model.RecentDocument
 import com.fatih.litepdf.ui.components.ConfirmDialog
-import com.fatih.litepdf.ui.theme.SumatraLikeColors
+import com.fatih.litepdf.ui.theme.LitePdfDimensions
 import com.fatih.litepdf.util.asReadableDate
 import com.fatih.litepdf.util.asReadableFileSize
 
@@ -71,18 +72,19 @@ fun HomeScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Surface(
-                color = SumatraLikeColors.ToolbarLight,
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 shadowElevation = 0.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .border(1.dp, SumatraLikeColors.DividerLight)
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f))
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
-                        .padding(horizontal = 10.dp),
+                        .height(LitePdfDimensions.TopBarHeight)
+                        .padding(horizontal = LitePdfDimensions.CompactPadding),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -106,8 +108,8 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = LitePdfDimensions.ScreenPadding, vertical = LitePdfDimensions.CompactPadding),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -116,7 +118,8 @@ fun HomeScreen(
             ) {
                 Text(
                     text = stringResource(R.string.recent_documents),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
                 if (state.recentDocuments.isNotEmpty()) {
@@ -131,7 +134,7 @@ fun HomeScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(bottom = 12.dp)
+                    contentPadding = PaddingValues(bottom = LitePdfDimensions.CompactPadding)
                 ) {
                     items(state.recentDocuments, key = { it.id }) { document ->
                         RecentDocumentRow(
@@ -191,12 +194,22 @@ private fun RecentDocumentRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(78.dp)
+                .heightIn(min = LitePdfDimensions.RecentItemMinHeight)
                 .clickable(onClick = onOpen)
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 0.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Box(
+                modifier = Modifier.width(48.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    Icons.Default.PictureAsPdf,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 val pageText = document.pageCount?.let {
@@ -205,14 +218,24 @@ private fun RecentDocumentRow(
                 val sizeText = document.sizeBytes?.let {
                     " - " + stringResource(R.string.file_size, it.asReadableFileSize())
                 }.orEmpty()
-                Text(document.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = document.displayName,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
                 Text(
                     text = pageText + sizeText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     stringResource(R.string.last_opened, document.lastOpenedAt.asReadableDate()),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -239,6 +262,6 @@ private fun RecentDocumentRow(
                 }
             }
         }
-        HorizontalDivider(color = SumatraLikeColors.DividerLight)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
     }
 }

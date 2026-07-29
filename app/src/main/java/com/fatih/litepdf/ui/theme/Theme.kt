@@ -11,22 +11,32 @@ import com.fatih.litepdf.domain.model.ThemeMode
 
 private val LightScheme: ColorScheme = lightColorScheme(
     primary = Color(0xFF1F5F99),
+    onPrimary = Color(0xFFFFFFFF),
     secondary = Color(0xFF4B5661),
+    onSecondary = Color(0xFFFFFFFF),
     tertiary = Color(0xFF6B5F35),
-    surface = Color(0xFFF6F6F6),
-    background = Color(0xFFE7E7E7),
+    background = Color(0xFFF7F8FA),
+    onBackground = Color(0xFF171A1F),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF171A1F),
     surfaceVariant = Color(0xFFEDEDED),
+    onSurfaceVariant = Color(0xFF555E68),
     outline = Color(0xFFC8C8C8)
 )
 
 private val DarkScheme: ColorScheme = darkColorScheme(
-    primary = Color(0xFF8AB4E8),
-    secondary = Color(0xFFC0C0C0),
-    tertiary = Color(0xFFD3C080),
-    surface = Color(0xFF202020),
-    background = Color(0xFF303030),
-    surfaceVariant = Color(0xFF2A2A2A),
-    outline = Color(0xFF555555)
+    primary = Color(0xFF8EC5FF),
+    onPrimary = Color(0xFF002E52),
+    secondary = Color(0xFFC8D0D8),
+    onSecondary = Color(0xFF202A33),
+    tertiary = Color(0xFFE2C96F),
+    background = Color(0xFF101316),
+    onBackground = Color(0xFFE8EAED),
+    surface = Color(0xFF171B20),
+    onSurface = Color(0xFFF1F3F5),
+    surfaceVariant = Color(0xFF252B31),
+    onSurfaceVariant = Color(0xFFC2C8D0),
+    outline = Color(0xFF49515A)
 )
 
 object SumatraLikeColors {

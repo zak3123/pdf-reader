@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -100,7 +101,7 @@ import com.fatih.litepdf.pdf.PdfSearchFailure
 import com.fatih.litepdf.pdf.PdfWordHighlight
 import com.fatih.litepdf.pdf.PdfPageLink
 import com.fatih.litepdf.util.PageJumpValidator
-import com.fatih.litepdf.ui.theme.SumatraLikeColors
+import com.fatih.litepdf.ui.theme.LitePdfDimensions
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -266,16 +267,13 @@ fun ReaderScreen(
                             offset = Offset.Zero
                         }
                     )
-                    SidebarDragHandle(
-                        expanded = drawerState.isOpen,
-                        onToggle = {
-                            scope.launch {
-                                if (drawerState.isOpen) drawerState.close() else drawerState.open()
-                            }
-                        },
-                        onDragOpen = { scope.launch { drawerState.open() } },
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    )
+                    if (!state.isOpening && !drawerState.isOpen) {
+                        SidebarDragHandle(
+                            onToggle = { scope.launch { drawerState.open() } },
+                            onDragOpen = { scope.launch { drawerState.open() } },
+                            modifier = Modifier.align(Alignment.CenterStart)
+                        )
+                    }
                 }
             }
         }
@@ -295,18 +293,17 @@ fun ReaderScreen(
 
 @Composable
 private fun SidebarDragHandle(
-    expanded: Boolean,
     onToggle: () -> Unit,
     onDragOpen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .width(SIDEBAR_HANDLE_TOUCH_WIDTH_DP.dp)
-            .height(SIDEBAR_HANDLE_HEIGHT_DP.dp)
-            .pointerInput(expanded) {
+            .width(LitePdfDimensions.SidebarHandleTouchWidth)
+            .height(LitePdfDimensions.SidebarHandleHeight)
+            .pointerInput(Unit) {
                 detectHorizontalDragGestures { _, dragAmount ->
-                    if (!expanded && dragAmount > 8f) {
+                    if (dragAmount > 8f) {
                         onDragOpen()
                     }
                 }
@@ -315,21 +312,19 @@ private fun SidebarDragHandle(
         contentAlignment = Alignment.CenterStart
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp),
             tonalElevation = 2.dp,
             modifier = Modifier
-                .width(SIDEBAR_HANDLE_VISUAL_WIDTH_DP.dp)
+                .width(22.dp)
                 .fillMaxHeight()
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = if (expanded) Icons.Default.ChevronLeft else Icons.Default.ChevronRight,
-                    contentDescription = if (expanded) {
-                        "Close navigation panel"
-                    } else {
-                        "Open navigation panel"
-                    },
-                    modifier = Modifier.size(18.dp)
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "Open navigation panel",
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -352,16 +347,17 @@ private fun ReaderToolbar(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Surface(
-        color = SumatraLikeColors.ToolbarLight,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .border(1.dp, SumatraLikeColors.DividerLight)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(LitePdfDimensions.TopBarHeight)
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -517,31 +513,39 @@ private fun ReaderScaffold(
         },
         bottomBar = {
             if (state.toolbarVisible && settings.showPageControls && state.pageCount > 0) {
-                Row(
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .background(SumatraLikeColors.ToolbarLight)
-                        .border(1.dp, SumatraLikeColors.DividerLight)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                 ) {
-                    IconButton(
-                        onClick = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
-                        enabled = state.currentPage > 0
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(LitePdfDimensions.ReaderBottomBarHeight)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
-                    }
-                    Text(
-                        stringResource(R.string.page_position, state.currentPage + 1, state.pageCount),
-                        modifier = Modifier.clickable(onClick = onShowJumpDialog)
-                    )
-                    IconButton(
-                        onClick = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
-                        enabled = state.currentPage < state.pageCount - 1
-                    ) {
-                        Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.next_page))
+                        IconButton(
+                            onClick = { onJumpToPage((state.currentPage - 1).coerceAtLeast(0)) },
+                            enabled = state.currentPage > 0
+                        ) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = stringResource(R.string.previous_page))
+                        }
+                        Text(
+                            stringResource(R.string.page_position, state.currentPage + 1, state.pageCount),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.clickable(onClick = onShowJumpDialog)
+                        )
+                        IconButton(
+                            onClick = { onJumpToPage((state.currentPage + 1).coerceAtMost(state.pageCount - 1)) },
+                            enabled = state.currentPage < state.pageCount - 1
+                        ) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.next_page))
+                        }
                     }
                 }
             }
@@ -588,7 +592,7 @@ private fun ReaderDocumentArea(
     val uriHandler = LocalUriHandler.current
     Box(
         modifier = modifier
-            .background(SumatraLikeColors.CanvasLight)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onToggleToolbar() },
@@ -597,7 +601,10 @@ private fun ReaderDocumentArea(
             }
     ) {
         when {
-            state.isOpening -> LoadingMessage(stringResource(R.string.reader_loading))
+            state.isOpening -> ReaderOpeningState(
+                filename = state.document?.displayName,
+                modifier = Modifier.fillMaxSize()
+            )
             state.openError -> ErrorMessage(stringResource(R.string.open_failed))
             state.pageCount > 0 && layoutMode == ReaderLayoutMode.SinglePage -> {
                 Box(
@@ -1015,7 +1022,7 @@ private fun PdfPageItem(
             .fillMaxWidth()
             .aspectRatio(displayAspectRatio)
             .shadow(3.dp, clip = false)
-            .border(1.dp, SumatraLikeColors.DividerLight)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
             .background(androidx.compose.ui.graphics.Color.White),
         contentAlignment = Alignment.Center
     ) {
@@ -1097,14 +1104,42 @@ private const val TABLET_NAVIGATION_BREAKPOINT_DP = 840
 private const val EXPANDED_NAVIGATION_BREAKPOINT_DP = 840
 private const val MEDIUM_NAVIGATION_WIDTH_DP = 320
 private const val EXPANDED_NAVIGATION_WIDTH_DP = 360
-private const val SIDEBAR_HANDLE_TOUCH_WIDTH_DP = 40
-private const val SIDEBAR_HANDLE_VISUAL_WIDTH_DP = 10
-private const val SIDEBAR_HANDLE_HEIGHT_DP = 64
 private val SEARCH_HIGHLIGHT_COLOR = Color(0xFFFFEB3B).copy(alpha = 0.45f)
 
 @Composable
+private fun ReaderOpeningState(filename: String?, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.reader_loading),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        if (!filename.isNullOrBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = filename,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
 private fun LoadingMessage(text: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
         Spacer(Modifier.height(12.dp))
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
