@@ -1,0 +1,139 @@
+LAPORAN LANJUTAN LITEPDF
+Tanggal: 29 Juli 2026
+
+STATUS PROJECT
+- Project aktif: D:\pdf-reader
+- Package: com.fatih.litepdf
+- Branch: agent/litepdf-reader-fixes
+- Remote: https://github.com/zak3123/pdf-reader.git
+- APK terbaru: D:\pdf-reader\app\build\outputs\apk\debug\app-debug.apk
+- Repo referensi: D:\pdf-reader-references
+- Commit terakhir yang sudah dipush: 45514b9bb76636fd6b9f8b4fb7d88c7d81874b44
+- Push status: berhasil ke origin/agent/litepdf-reader-fixes
+
+YANG SUDAH DIKERJAKAN
+1. Home screen
+- Toolbar home tidak lagi memakai warna light hardcoded.
+- Recent document list dibuat lebih rapi.
+- Filename panjang tidak lagi dipaksa masuk tinggi tetap.
+- Recent item memakai tinggi dinamis heightIn(min = 88.dp).
+- Divider tidak lagi memotong teks.
+- Warna text/icon mengikuti MaterialTheme.colorScheme.
+
+2. Reader UI
+- Top bar reader tidak lagi putih/pucat di dark mode.
+- Bottom page control sudah memakai themed Surface.
+- Loading reader dibuat state khusus di tengah layar.
+- Sidebar handle disembunyikan saat opening/loading.
+- Sidebar handle tidak lagi berupa balok hitam besar.
+- HP landscape tetap tidak dianggap tablet.
+
+3. Theme dan token
+- Ditambah file:
+  D:\pdf-reader\app\src\main\java\com\fatih\litepdf\ui\theme\LitePdfDimensions.kt
+- Theme.kt diperbaiki untuk onSurface, onBackground, onSurfaceVariant, dan skema dark/light.
+
+4. Dokumentasi
+- D:\pdf-reader\docs\OPEN_SOURCE_REFERENCES.md
+- D:\pdf-reader\docs\UI_BEFORE_AFTER.md
+- D:\pdf-reader\docs\ROTATION_DEBUG_REPORT.md
+- D:\pdf-reader\docs\RENDER_ENGINE_BENCHMARK.md
+
+REPO REFERENSI YANG SUDAH DI-CLONE
+- D:\pdf-reader-references\PdfReaderPro
+- D:\pdf-reader-references\AhmerPdfium
+- D:\pdf-reader-references\android-pdfview
+- D:\pdf-reader-references\compose-samples
+- D:\pdf-reader-references\mupdf-android-viewer
+- D:\pdf-reader-references\sumatrapdf
+
+VALIDASI TERAKHIR
+- Command final sukses:
+  .\gradlew.bat testDebugUnitTest assembleDebug --no-daemon --console=plain --max-workers=1
+- APK debug terbaru berhasil dibuat.
+- git diff --check bersih.
+- gh auth status login sebagai zak3123.
+- git push sukses.
+- Remote SHA sama dengan lokal:
+  45514b9bb76636fd6b9f8b4fb7d88c7d81874b44
+
+FILE YANG DIUBAH PADA COMMIT TERAKHIR
+- D:\pdf-reader\app\src\main\java\com\fatih\litepdf\ui\home\HomeScreen.kt
+- D:\pdf-reader\app\src\main\java\com\fatih\litepdf\ui\reader\ReaderScreen.kt
+- D:\pdf-reader\app\src\main\java\com\fatih\litepdf\ui\theme\Theme.kt
+- D:\pdf-reader\app\src\main\java\com\fatih\litepdf\ui\theme\LitePdfDimensions.kt
+- D:\pdf-reader\docs\OPEN_SOURCE_REFERENCES.md
+- D:\pdf-reader\docs\UI_BEFORE_AFTER.md
+- D:\pdf-reader\docs\ROTATION_DEBUG_REPORT.md
+- D:\pdf-reader\docs\RENDER_ENGINE_BENCHMARK.md
+
+YANG BELUM SELESAI
+- Belum ada screenshot runtime baru dari emulator/device.
+- Belum ada Compose screenshot test.
+- Belum ada connected Android test.
+- Belum ada benchmark nyata PdfRenderer vs Pdfium.
+- PageTransform sudah diperkuat sebagai geometry source awal, tetapi belum di-wire penuh ke semua overlay.
+- RotationNormalizer sudah dibuat sebagai util bersama di com.fatih.litepdf.util.normalizeRotation().
+- Belum split besar ReaderScreen.kt menjadi banyak komponen.
+- Belum implement View Options bottom sheet lengkap.
+- Belum implement tabs sidebar Outline / Pages / Bookmarks secara penuh.
+- Belum verifikasi manual PDF /Rotate 90, /Rotate 270, mixed portrait-landscape.
+- Belum pastikan search highlight/link overlay tetap akurat setelah semua kombinasi rotation.
+
+MASALAH AKAR YANG SUDAH DITEMUKAN
+- Toolbar pucat: ToolbarLight dipakai hardcoded di dark mode.
+- Recent overlap: item recent dipaksa height(78.dp), padahal filename bisa dua baris.
+- Loading abu-abu aneh: loading memakai area reader biasa dan tidak center full canvas.
+- Handle hitam: handle dibuat sebagai surface gelap besar dan tetap muncul saat loading.
+- Potensi rotasi/double rotation: metadata rotation diterapkan di engine, manual rotation diterapkan di Compose. Belum terbukti double-rotation, tetapi perlu PageGeometry dan log PdfRotationDebug.
+- PdfRotationDebug sudah ditambahkan di AndroidPdfEngine untuk membantu cek runtime.
+
+INSTRUKSI PENTING UNTUK LANJUTAN
+- Jangan git reset --hard.
+- Jangan git clean -fd.
+- Jangan force push.
+- Jangan shutdown PC kalau push gagal.
+- Build harus hemat resource.
+
+COMMAND BUILD HEMAT RESOURCE
+$env:JAVA_HOME='C:\Users\abdul\Documents\New project\.tools\jdk17'
+$env:ANDROID_HOME='D:\AndroidSdk'
+$env:ANDROID_SDK_ROOT='D:\AndroidSdk'
+$env:GRADLE_OPTS='-Dkotlin.compiler.execution.strategy=in-process -Dorg.gradle.workers.max=1 -Xmx1280m'
+.\gradlew.bat testDebugUnitTest assembleDebug --no-daemon --console=plain --max-workers=1
+
+SEBELUM PUSH
+git status --short --branch
+git diff --stat
+git diff --check
+gh auth status
+git push --dry-run origin agent/litepdf-reader-fixes
+
+PROMPT LANJUTAN YANG BISA DIPAKAI
+Lanjutkan project LitePDF di D:\pdf-reader branch agent/litepdf-reader-fixes.
+
+Status terakhir:
+- Commit terakhir sudah dipush: 45514b9bb76636fd6b9f8b4fb7d88c7d81874b44
+- APK terbaru: D:\pdf-reader\app\build\outputs\apk\debug\app-debug.apk
+- Build/test terakhir sukses: testDebugUnitTest assembleDebug
+- Repo referensi ada di D:\pdf-reader-references
+- Jangan shutdown PC.
+- Hemat CPU/RAM: pakai --no-daemon --max-workers=1 dan GRADLE_OPTS heap rendah.
+
+Yang sudah fix:
+- dark/light theme contrast
+- recent document overlap
+- reader loading centered
+- sidebar handle tidak lagi balok hitam
+- docs open-source/UI/rotation/benchmark sudah dibuat
+
+Lanjutkan dari sini:
+1. Verifikasi runtime/screenshot jika device/emulator tersedia.
+2. Wire PageTransform ke bitmap, highlight, dan link overlay agar benar-benar satu sumber kebenaran.
+3. Pakai log PdfRotationDebug untuk cek PDF /Rotate 90 dan /Rotate 270 di device.
+4. Tambah unit test rotation/page geometry/cache key.
+5. Rapikan ReaderScreen.kt menjadi komponen terpisah tanpa mengubah engine besar dulu.
+6. Jangan klaim Pdfium lebih baik sebelum benchmark nyata.
+7. Build/test low-resource.
+8. Commit dan push ke agent/litepdf-reader-fixes.
+Kalau push gagal, laporkan error dan jangan shutdown.

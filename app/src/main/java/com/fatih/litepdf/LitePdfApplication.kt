@@ -1,5 +1,6 @@
 package com.fatih.litepdf
 
+import android.app.ActivityManager
 import android.app.Application
 import androidx.room.Room
 import com.fatih.litepdf.data.database.LitePdfDatabase
@@ -9,6 +10,7 @@ import com.fatih.litepdf.domain.repository.DocumentRepository
 import com.fatih.litepdf.domain.repository.SettingsRepository
 import com.fatih.litepdf.pdf.AndroidPdfEngine
 import com.fatih.litepdf.pdf.PdfBitmapCache
+import com.fatih.litepdf.pdf.PdfDocumentStructureReader
 import com.fatih.litepdf.pdf.PdfBoxTextSearchEngine
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
@@ -24,15 +26,30 @@ class LitePdfApplication : Application() {
 }
 
 class AppContainer(application: Application) {
+    val isLowRamDevice: Boolean =
+        application.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
+
     val database: LitePdfDatabase = Room.databaseBuilder(
         application,
         LitePdfDatabase::class.java,
         "litepdf.db"
     ).build()
 
-    val bitmapCache = PdfBitmapCache()
-    val pdfEngine = AndroidPdfEngine(application.contentResolver)
+    val bitmapCache = PdfBitmapCache(
+        maxBytes = if (isLowRamDevice) {
+            PdfBitmapCache.defaultMaxBytes().coerceAtMost(16 * 1024 * 1024)
+        } else {
+            PdfBitmapCache.defaultMaxBytes()
+        },
+        retentionRadius = if (isLowRamDevice) 1 else 3
+    )
+    val thumbnailCache = PdfBitmapCache(
+        maxBytes = if (isLowRamDevice) 2 * 1024 * 1024 else 4 * 1024 * 1024,
+        retentionRadius = 24
+    )
+    val pdfEngine = AndroidPdfEngine(application.contentResolver, isLowRamDevice)
     val textSearchEngine = PdfBoxTextSearchEngine(application.contentResolver)
+    val documentStructureReader = PdfDocumentStructureReader(application.contentResolver)
     val documentRepository: DocumentRepository = RoomDocumentRepository(
         contentResolver = application.contentResolver,
         recentDao = database.recentDocumentDao(),

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.fatih.litepdf.pdf.PdfBitmapCache
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -22,6 +23,18 @@ class PdfBitmapCacheTest {
         cache.put("doc", 1, 100, second)
 
         assertNull(cache.get("doc", 0, 100))
+        assertTrue(first.isRecycled)
         assertNotNull(cache.get("doc", 1, 100))
+    }
+
+    @Test
+    fun cacheClearRecyclesBitmaps() {
+        val cache = PdfBitmapCache(maxBytes = 400)
+        val bitmap = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
+
+        cache.put("doc", 0, 100, bitmap)
+        cache.clear()
+
+        assertTrue(bitmap.isRecycled)
     }
 }
