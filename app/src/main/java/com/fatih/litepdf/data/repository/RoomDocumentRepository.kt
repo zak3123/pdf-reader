@@ -9,6 +9,7 @@ import com.fatih.litepdf.data.database.RecentDocumentDao
 import com.fatih.litepdf.data.model.BookmarkEntity
 import com.fatih.litepdf.data.model.RecentDocumentEntity
 import com.fatih.litepdf.domain.model.Bookmark
+import com.fatih.litepdf.domain.model.DocumentKind
 import com.fatih.litepdf.domain.model.RecentDocument
 import com.fatih.litepdf.domain.repository.DocumentRepository
 import com.fatih.litepdf.domain.repository.OpenDocumentResult
@@ -41,6 +42,25 @@ class RoomDocumentRepository(
                 return@withContext OpenDocumentResult.Failure(OpenFailureReason.EmptyFile)
             }
 
+            val kind = DocumentKind.detect(metadata.mimeType, metadata.displayName)
+
+            // Textual/office documents (Word, PowerPoint, Excel, plain text) are opened by the
+            // dedicated text reader, which extracts their content. We only record metadata here;
+            // page count is not meaningful for these, so it stays null.
+            if (kind.isTextual) {
+                return@withContext persistDocument(
+                    uriString = uriString,
+                    metadata = metadata,
+                    pageCount = null,
+                    kind = kind,
+                    replaceDocumentId = replaceDocumentId
+                )
+            }
+
+            if (kind == DocumentKind.UNKNOWN) {
+                return@withContext OpenDocumentResult.Failure(OpenFailureReason.UnsupportedOrCorrupt)
+            }
+
             val pageCount = try {
                 pdfEngine.open(uri).use { session -> session.info.pageCount }
             } catch (file: FileNotFoundException) {
@@ -59,21 +79,43 @@ class RoomDocumentRepository(
                 return@withContext OpenDocumentResult.Failure(OpenFailureReason.UnsupportedOrCorrupt)
             }
 
-            val documentId = replaceDocumentId ?: stableDocumentId(uriString)
-            val existing = recentDao.getById(documentId)
-            val document = RecentDocumentEntity(
-                id = documentId,
+            persistDocument(
                 uriString = uriString,
-                displayName = metadata.displayName,
-                lastOpenedAt = clock(),
-                lastViewedPage = existing?.lastViewedPage?.coerceIn(0, pageCount - 1) ?: 0,
+                metadata = metadata,
                 pageCount = pageCount,
-                sizeBytes = metadata.sizeBytes,
-                lastKnownModified = metadata.lastModified
+                kind = DocumentKind.PDF,
+                replaceDocumentId = replaceDocumentId
             )
-            recentDao.upsert(document)
-            OpenDocumentResult.Success(document.asDomain())
         }
+
+    private suspend fun persistDocument(
+        uriString: String,
+        metadata: DocumentMetadata,
+        pageCount: Int?,
+        kind: DocumentKind,
+        replaceDocumentId: String?
+    ): OpenDocumentResult {
+        val documentId = replaceDocumentId ?: stableDocumentId(uriString)
+        val existing = recentDao.getById(documentId)
+        val lastViewedPage = if (pageCount != null) {
+            existing?.lastViewedPage?.coerceIn(0, pageCount - 1) ?: 0
+        } else {
+            existing?.lastViewedPage ?: 0
+        }
+        val document = RecentDocumentEntity(
+            id = documentId,
+            uriString = uriString,
+            displayName = metadata.displayName,
+            lastOpenedAt = clock(),
+            lastViewedPage = lastViewedPage,
+            pageCount = pageCount,
+            sizeBytes = metadata.sizeBytes,
+            lastKnownModified = metadata.lastModified,
+            kind = kind.name
+        )
+        recentDao.upsert(document)
+        return OpenDocumentResult.Success(document.asDomain())
+    }
 
     override suspend fun reopenDocument(documentId: String): OpenDocumentResult {
         val existing = recentDao.getById(documentId)
@@ -113,9 +155,14 @@ class RoomDocumentRepository(
     }
 
     private fun queryMetadata(uri: Uri): DocumentMetadata {
-        var displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "document.pdf"
+        var displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "document"
         var sizeBytes: Long? = null
         var lastModified: Long? = null
+        val mimeType: String? = try {
+            contentResolver.getType(uri)
+        } catch (throwable: Throwable) {
+            null
+        }
 
         val cursor: Cursor? = try {
             contentResolver.query(uri, null, null, null, null)
@@ -140,7 +187,7 @@ class RoomDocumentRepository(
             }
         }
 
-        return DocumentMetadata(displayName, sizeBytes, lastModified)
+        return DocumentMetadata(displayName, sizeBytes, lastModified, mimeType)
     }
 
     private fun Cursor.stringValue(columnName: String): String? {
@@ -156,6 +203,7 @@ class RoomDocumentRepository(
     private data class DocumentMetadata(
         val displayName: String,
         val sizeBytes: Long?,
-        val lastModified: Long?
+        val lastModified: Long?,
+        val mimeType: String?
     )
 }

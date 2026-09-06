@@ -26,6 +26,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.fatih.litepdf.domain.model.AppSettings
+import com.fatih.litepdf.domain.model.DocumentKind
 import com.fatih.litepdf.navigation.Routes
 import com.fatih.litepdf.ui.home.HomeOpenError
 import com.fatih.litepdf.ui.home.HomeScreen
@@ -35,6 +36,8 @@ import com.fatih.litepdf.ui.reader.ReaderViewModel
 import com.fatih.litepdf.ui.settings.AboutScreen
 import com.fatih.litepdf.ui.settings.SettingsScreen
 import com.fatih.litepdf.ui.settings.SettingsViewModel
+import com.fatih.litepdf.ui.textreader.TextReaderScreen
+import com.fatih.litepdf.ui.textreader.TextReaderViewModel
 import com.fatih.litepdf.ui.theme.LitePdfTheme
 
 class MainActivity : ComponentActivity() {
@@ -130,8 +133,13 @@ private fun LitePdfApp(
     }
 
     LaunchedEffect(homeViewModel) {
-        homeViewModel.openedDocuments.collect { documentId ->
-            navController.navigate(Routes.reader(documentId))
+        homeViewModel.openedDocuments.collect { document ->
+            val route = if (document.kind.isTextual) {
+                Routes.textReader(document.id)
+            } else {
+                Routes.reader(document.id)
+            }
+            navController.navigate(route)
         }
     }
 
@@ -154,7 +162,7 @@ private fun LitePdfApp(
             HomeScreen(
                 state = homeState,
                 snackbarHostState = snackbarHostState,
-                onOpenPdf = { openDocumentLauncher.launch(arrayOf("application/pdf")) },
+                onOpenPdf = { openDocumentLauncher.launch(DocumentKind.openableMimeTypes) },
                 onOpenRecent = homeViewModel::reopen,
                 onRemoveRecent = homeViewModel::removeRecent,
                 onClearHistory = homeViewModel::clearRecents,
@@ -171,21 +179,48 @@ private fun LitePdfApp(
                     settingsRepository = container.settingsRepository,
                     pdfEngine = container.pdfEngine,
                     textSearchEngine = container.textSearchEngine,
-                    bitmapCache = container.bitmapCache
+                    bitmapCache = container.bitmapCache,
+                    thumbnailCache = container.thumbnailCache,
+                    documentStructureReader = container.documentStructureReader
                 )
             )
             val readerState by readerViewModel.uiState.collectAsStateWithLifecycle()
             ReaderScreen(
                 state = readerState,
                 settings = settings,
+                isLowRamDevice = container.isLowRamDevice,
                 onBack = { navController.popBackStack() },
+                onOpenDocument = { openDocumentLauncher.launch(DocumentKind.openableMimeTypes) },
                 onToggleToolbar = readerViewModel::toggleToolbar,
                 onVisiblePageChanged = readerViewModel::onVisiblePageChanged,
                 onRenderPage = readerViewModel::renderPage,
                 onBookmarkCurrentPage = readerViewModel::bookmarkCurrentPage,
                 onRemoveBookmark = readerViewModel::removeBookmark,
                 onSearchQueryChange = readerViewModel::updateSearchQuery,
-                onSearch = readerViewModel::searchText
+                onSearch = readerViewModel::searchText,
+                onSearchHitSelected = readerViewModel::selectSearchHit,
+                onRenderThumbnail = readerViewModel::renderThumbnail
+            )
+        }
+        composable(Routes.TextReader) { entry ->
+            val documentId = entry.arguments?.getString("documentId").orEmpty()
+            val textReaderViewModel: TextReaderViewModel = viewModel(
+                key = "textreader-$documentId",
+                factory = TextReaderViewModel.Factory(
+                    documentId = documentId,
+                    repository = container.documentRepository,
+                    textDocumentEngine = container.textDocumentEngine
+                )
+            )
+            val textReaderState by textReaderViewModel.uiState.collectAsStateWithLifecycle()
+            TextReaderScreen(
+                state = textReaderState,
+                onBack = { navController.popBackStack() },
+                onRetry = textReaderViewModel::retry,
+                onSearchQueryChange = textReaderViewModel::setSearchQuery,
+                onToggleSearch = textReaderViewModel::toggleSearchBar,
+                onNextMatch = textReaderViewModel::goNextMatch,
+                onPrevMatch = textReaderViewModel::goPrevMatch
             )
         }
         composable(Routes.Settings) {
@@ -216,7 +251,7 @@ private fun LitePdfApp(
                 Button(onClick = {
                     relocateDocumentId = homeState.pendingRelocateDocumentId
                     homeViewModel.dismissRelocate()
-                    openDocumentLauncher.launch(arrayOf("application/pdf"))
+                    openDocumentLauncher.launch(DocumentKind.openableMimeTypes)
                 }) {
                     Text(stringResource(R.string.locate))
                 }

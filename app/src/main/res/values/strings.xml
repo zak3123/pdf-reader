@@ -82,4 +82,8 @@
     <string name="document_relocated">Document access restored.</string>
     <string name="file_size">Size %1$s</string>
     <string name="total_pages">Pages %1$d</string>
-</resources>
+    <string name="open_document">Open document</string>\n    <string name="unsupported_office_legacy">Legacy Office files (.doc, .ppt, .xls) are not supported. Please save as .docx, .pptx, or .xlsx.</string>\n    <string name="unsupported_office_corrupt">This document could not be read. It may be corrupted or password-protected.</string>\n    <string name="office_empty">This document has no readable text content.</string>\n    <string name="text_position">Block %1$d of %2$d • %3$s</string>\n    <string name="no_recent_documents_body_all">Open a local document (PDF, Word, PowerPoint, Excel, or text) to see it here.</string></resources>
+
+
+
+

@@ -28,11 +28,14 @@ class AppContainer(application: Application) {
         application,
         LitePdfDatabase::class.java,
         "litepdf.db"
-    ).build()
+    )
+        .addMigrations(LitePdfDatabase.MIGRATION_1_2)
+        .build()
 
     val bitmapCache = PdfBitmapCache()
     val pdfEngine = AndroidPdfEngine(application.contentResolver)
     val textSearchEngine = PdfBoxTextSearchEngine(application.contentResolver)
+    val textDocumentEngine = office.TextDocumentEngine(application.contentResolver)
     val documentRepository: DocumentRepository = RoomDocumentRepository(
         contentResolver = application.contentResolver,
         recentDao = database.recentDocumentDao(),
@@ -40,4 +43,4 @@ class AppContainer(application: Application) {
         pdfEngine = pdfEngine
     )
     val settingsRepository: SettingsRepository = SettingsDataStore(application)
-}
+}",
